@@ -5,6 +5,7 @@ import { ChevronLeft, Download, Smartphone, Share2, Plus, RefreshCw } from "luci
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { PWADiagnostics } from "@/components/pwa-diagnostics"
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -325,6 +326,13 @@ export function InstallAppScreen({ onBack }: InstallAppScreenProps) {
                   <p className="text-sm text-muted-foreground">Interface otimizada para o seu dispositivo</p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="font-medium mb-3">Diagnóstico de instalação:</h3>
+            <CardContent className="p-0">
+              <PWADiagnostics />
             </CardContent>
           </Card>
         </div>

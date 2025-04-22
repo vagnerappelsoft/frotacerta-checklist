@@ -68,14 +68,34 @@ export default function RootLayout({
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(
-                    function(registration) {
+                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then(function(registration) {
                       console.log('Service Worker registrado com sucesso:', registration.scope);
-                    },
-                    function(err) {
-                      console.log('Falha ao registrar Service Worker:', err);
-                    }
-                  );
+                      
+                      // Verificar atualizações do service worker
+                      registration.addEventListener('updatefound', function() {
+                        const newWorker = registration.installing;
+                        console.log('Novo Service Worker instalando...');
+                        
+                        newWorker.addEventListener('statechange', function() {
+                          console.log('Service Worker estado:', newWorker.state);
+                        });
+                      });
+                      
+                      // Verificar atualizações periodicamente
+                      setInterval(function() {
+                        registration.update();
+                        console.log('Verificando atualizações do Service Worker...');
+                      }, 60 * 60 * 1000); // A cada hora
+                    })
+                    .catch(function(err) {
+                      console.error('Falha ao registrar Service Worker:', err);
+                    });
+                });
+                
+                // Lidar com atualizações do service worker
+                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                  console.log('Novo Service Worker ativado, recarregando para atualizar...');
                 });
               }
             `,

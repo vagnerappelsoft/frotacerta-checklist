@@ -16,6 +16,10 @@ import Link from "next/link"
 // Importar o componente Logo
 import { Logo } from "@/components/ui/logo"
 
+// Alterar a importação de CLIENT_ID
+import { CLIENT_ID } from "@/lib/constants"
+import { apiService } from "@/lib/api-service"
+
 export function LoginScreen() {
   // Adicionar credenciais de teste pré-preenchidas para facilitar o login
   const [username, setUsername] = useState("motorista_teste")
@@ -26,6 +30,9 @@ export function LoginScreen() {
   const router = useRouter()
   const { login, isAuthenticated } = useAuth()
 
+  // Adicionar um novo estado para o CLIENT_ID
+  const [clientId, setClientId] = useState(CLIENT_ID || "frota-teste")
+
   // Verificar se o usuário já está autenticado
   useEffect(() => {
     if (isAuthenticated) {
@@ -33,7 +40,7 @@ export function LoginScreen() {
     }
   }, [isAuthenticated, router])
 
-  // Modificar o handleLogin para mostrar feedback durante a sincronização
+  // Modificar o handleLogin para usar o clientId informado
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -49,6 +56,13 @@ export function LoginScreen() {
       if (!password.trim()) {
         throw new Error("Senha é obrigatória")
       }
+
+      if (!clientId.trim()) {
+        throw new Error("ID do Cliente é obrigatório")
+      }
+
+      // Configurar o clientId no serviço de API
+      apiService.setClientId(clientId)
 
       // Tentar fazer login
       await login(username, password)
@@ -114,6 +128,22 @@ export function LoginScreen() {
                     disabled={isLoading}
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="clientId">ID do Cliente</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="clientId"
+                    placeholder="ID do cliente (tenant)"
+                    className="pl-9"
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">Identificador único da sua empresa no sistema</p>
               </div>
 
               {error && (

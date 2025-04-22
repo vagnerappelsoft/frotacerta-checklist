@@ -38,18 +38,38 @@ export class ApiService {
 
   // Configurar o ID do cliente
   setClientId(clientId: string) {
+    if (!clientId || clientId.trim() === "") {
+      console.warn("Tentativa de definir clientId vazio, usando valor padrão")
+      clientId = "frota-teste"
+    }
+
+    console.log(`Alterando clientId para: ${clientId}`)
     this.clientId = clientId
     localStorage.setItem("client_id", clientId)
+
+    // Disparar um evento para notificar outros componentes sobre a mudança
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("client-id-changed", { detail: clientId }))
+    }
+
+    return clientId
   }
 
   // Obter o ID do cliente
   getClientId(): string {
-    if (!this.clientId || this.clientId === "frota-teste") {
-      const storedClientId = localStorage.getItem("client_id")
-      if (storedClientId) {
-        this.clientId = storedClientId
-      }
+    // Primeiro, verificar no localStorage
+    const storedClientId = localStorage.getItem("client_id")
+
+    if (storedClientId && storedClientId.trim() !== "") {
+      this.clientId = storedClientId
+      return storedClientId
     }
+
+    // Se não estiver no localStorage, usar o valor atual ou o padrão
+    if (!this.clientId || this.clientId.trim() === "") {
+      this.clientId = CLIENT_ID || "frota-teste"
+    }
+
     return this.clientId
   }
 

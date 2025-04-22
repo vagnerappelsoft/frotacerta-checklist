@@ -15,7 +15,7 @@ export const CHECKLIST_TEMPLATES = [
     items: [
       { id: "1-1", question: "Documentos do veículo estão em ordem?", type: "boolean" },
       { id: "1-2", question: "Nível de combustível", type: "fuel" },
-      { id: "1-3", question: "Pneus em boas condições?", type: "boolean", requiresPhoto: true },
+      { id: "1-3", question: "Pneus em boas condições?", type: "boolean", requiresPhoto: true, requiredImage: true },
       { id: "1-4", question: "Luzes funcionando corretamente?", type: "boolean" },
       {
         id: "1-5",
@@ -25,6 +25,7 @@ export const CHECKLIST_TEMPLATES = [
         requiresAudio: true,
       },
       { id: "1-6", question: "Observações adicionais", type: "text" },
+      { id: "1-7", question: "Foto da frente do veículo", type: "image", requiresPhoto: true, requiredImage: true },
     ],
   },
   {

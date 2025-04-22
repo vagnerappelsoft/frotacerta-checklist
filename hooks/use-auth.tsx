@@ -142,6 +142,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
 
     try {
+      // Verificar se temos um clientId armazenado
+      const clientId = localStorage.getItem("client_id")
+      if (clientId) {
+        console.log(`Usando clientId armazenado: ${clientId}`)
+        apiService.setClientId(clientId)
+      }
+
       // Chamar o serviço de API para fazer login
       const result = await apiService.login(username, password)
 

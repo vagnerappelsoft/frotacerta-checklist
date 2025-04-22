@@ -72,24 +72,20 @@ export function ChecklistTemplates({ onSelectTemplate, templates = DEFAULT_TEMPL
         <div className="grid grid-cols-1 gap-4 pb-4">
           {filteredTemplates.length > 0 ? (
             filteredTemplates.map((template) => {
-              // Obter a cor do grupo ou usar uma cor padrão
-              const groupColor = template.group?.color || "default"
-              const color = colorMap[groupColor] || colorMap.default
+              // Obter a cor diretamente do template ou do grupo, se existir
+              const groupColor = template.group?.color || template.color || "default"
+              const color = colorMap[groupColor] || colorMap[template.color] || colorMap.default
 
               // Converter a cor hex para classes de estilo inline
               const borderStyle = { borderLeftColor: color }
               const bgStyle = { backgroundColor: `${color}10` } // 10% de opacidade
               const iconStyle = { color: color }
 
-              // Obter o ícone do grupo
-              const iconCode = template.group?.icon || "icon_1"
+              // Obter o ícone diretamente do template ou do grupo, se existir
+              const iconCode = template.group?.icon || template.iconName || "icon_1"
 
-              // Obter o nome do grupo
+              // Obter o nome do grupo, se existir
               const groupName = template.group?.name || ""
-
-              // Log para depuração
-              console.log("Template completo:", template)
-              console.log("Dados do grupo:", template.group)
 
               return (
                 <Card

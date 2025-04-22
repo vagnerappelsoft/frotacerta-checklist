@@ -84,6 +84,24 @@ export function InstallPWAPrompt() {
       localStorage.setItem("pwaPromptShown", "true")
     })
 
+    // Verificar se o manifesto está disponível
+    fetch("/manifest.json")
+      .then((response) => {
+        if (response.ok) {
+          addDebugInfo("Manifesto encontrado e acessível")
+          return response.json()
+        } else {
+          addDebugInfo(`Erro ao acessar o manifesto: ${response.status}`)
+          throw new Error(`Erro ao acessar o manifesto: ${response.status}`)
+        }
+      })
+      .then((data) => {
+        addDebugInfo(`Manifesto carregado: ${JSON.stringify(data.name)}`)
+      })
+      .catch((error) => {
+        addDebugInfo(`Erro ao buscar o manifesto: ${error}`)
+      })
+
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
       window.removeEventListener("appinstalled", () => {})

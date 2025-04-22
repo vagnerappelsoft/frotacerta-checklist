@@ -30,6 +30,27 @@ const iconMap: Record<string, React.ElementType> = {
   icon_8: Package,
   icon_9: Recycle,
   icon_10: ClipboardCheck,
+  icon_11: FileText,
+  icon_12: Shield,
+  icon_13: Fuel,
+  icon_14: Package,
+  icon_15: Recycle,
+  icon_16: ClipboardCheck,
+  icon_17: ArrowRight,
+  icon_18: Calendar,
+  icon_19: AlertTriangle,
+  icon_20: Tool,
+  icon_21: FileCheck,
+  icon_22: Mic,
+  // Adicione mapeamentos para cores também
+  color_1: "#FF6B8A", // Rosa
+  color_2: "#8B5A2B", // Marrom
+  color_3: "#FF7043", // Laranja
+  color_4: "#9C27B0", // Roxo
+  color_5: "#FFC107", // Amarelo
+  color_6: "#00BCD4", // Ciano
+  color_7: "#E91E63", // Rosa escuro
+  color_8: "#607D8B", // Azul acinzentado
   // Adicionar mapeamentos legados para compatibilidade
   ArrowRight: ArrowRight,
   Calendar: Calendar,
@@ -48,17 +69,12 @@ const iconMap: Record<string, React.ElementType> = {
  * @returns Componente de ícone React
  */
 export function getIconFromCode(iconCode: string, className = "h-6 w-6", style = {}): React.ReactNode {
-  // Adicionar log para debug
-  console.log("Código de ícone recebido:", iconCode)
-
   // Verificar se o código existe no mapa
   if (iconMap[iconCode]) {
     const IconComponent = iconMap[iconCode]
-    console.log("Ícone encontrado:", iconCode)
     return <IconComponent className={className} style={style} />
   }
 
   // Fallback para ícone padrão se o código não for encontrado
-  console.log("Ícone não encontrado, usando fallback para:", iconCode)
   return <Car className={className} style={style} />
 }

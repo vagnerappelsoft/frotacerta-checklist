@@ -78,9 +78,9 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
   const currentItem = checklist.items[currentStep]
 
   // Check if current item requires photos, audio or observations
-  const requiresPhoto = currentItem.requiresPhoto || false
-  const requiresAudio = currentItem.requiresAudio || false
-  const requiresObservation = currentItem.requiresObservation || false
+  const requiresPhoto = currentItem.requiresPhoto || currentItem.requiredImage || currentItem.type === "image" || false
+  const requiresAudio = currentItem.requiresAudio || currentItem.requiredAudio || false
+  const requiresObservation = currentItem.requiresObservation || currentItem.requiredObservation || false
 
   const handleNext = () => {
     // Limpar qualquer erro de submissão anterior
@@ -884,6 +884,32 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
               </div>
             )}
 
+            {currentItem.type === "image" && (
+              <div className="flex flex-col gap-4">
+                <div className="text-center p-4 border-2 border-dashed rounded-lg">
+                  <Camera className="h-12 w-12 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Este item requer uma foto. Clique no botão abaixo para adicionar.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mx-auto bg-blue-50 text-blue-500 border-blue-200 hover:bg-blue-100"
+                    onClick={openCamera}
+                  >
+                    <Camera className="h-4 w-4 mr-2" />
+                    Adicionar Foto
+                  </Button>
+                </div>
+                {errors[currentItem.id] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[currentItem.id]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
             {requiresObservation && (
               <div className="space-y-2 mt-4">
                 <Label htmlFor={`${currentItem.id}-observation`} className="flex items-center">
@@ -908,7 +934,7 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
             )}
 
             {/* Renderizar os complementos (fotos e áudios) para todos os tipos de itens */}
-            {(requiresPhoto || requiresAudio) && renderMediaAttachments()}
+            {renderMediaAttachments()}
           </CardContent>
           <CardFooter>
             <Button className="w-full bg-blue-500 hover:bg-blue-600 text-white" onClick={handleNext}>
