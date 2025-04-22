@@ -1,35 +1,16 @@
-import { ArrowRight, Calendar, Fuel, AlertTriangle, PenToolIcon as Tool, FileCheck, Mic } from "lucide-react"
+// Não precisamos mais da função getIconByName, pois agora usamos getIconFromCode
+// Mantemos apenas os dados de exemplo
 
-// Helper function to get icon by name
-export const getIconByName = (iconName: string, className = "h-6 w-6") => {
-  switch (iconName) {
-    case "ArrowRight":
-      return <ArrowRight className={className} />
-    case "Calendar":
-      return <Calendar className={className} />
-    case "Fuel":
-      return <Fuel className={className} />
-    case "AlertTriangle":
-      return <AlertTriangle className={className} />
-    case "Tool":
-      return <Tool className={className} />
-    case "FileCheck":
-      return <FileCheck className={className} />
-    case "Mic":
-      return <Mic className={className} />
-    default:
-      return <ArrowRight className={className} />
-  }
-}
+// Vamos garantir que os dados de exemplo tenham cores específicas e distintas
+// Modifique as cores dos primeiros templates para corresponder ao que vemos na imagem:
 
-// Atualizar as cores dos templates para usar nomes de cores Tailwind consistentes
 export const CHECKLIST_TEMPLATES = [
   {
     id: "1",
-    title: "Saída de Viagem",
-    description: "Checklist para verificação do veículo antes de iniciar uma viagem",
-    iconName: "ArrowRight",
-    color: "bg-orange-50",
+    title: "Nome",
+    description: "Sem descrição",
+    iconName: "icon_1", // Car
+    color: "color_1", // Rosa
     estimatedTime: "5-10 min",
     items: [
       { id: "1-1", question: "Documentos do veículo estão em ordem?", type: "boolean" },
@@ -48,11 +29,11 @@ export const CHECKLIST_TEMPLATES = [
   },
   {
     id: "2",
-    title: "Completo Viagem",
-    description: "Checklist completo para verificação do veículo após concluir uma viagem",
-    iconName: "FileCheck",
-    color: "bg-blue-50",
-    estimatedTime: "10-15 min",
+    title: "Nome teste teste",
+    description: "Sem descrição",
+    iconName: "icon_2", // Truck
+    color: "color_2", // Marrom
+    estimatedTime: "5-10 min",
     items: [
       { id: "2-1", question: "Quilometragem final", type: "number" },
       { id: "2-2", question: "Nível de combustível ao retornar", type: "fuel" },
@@ -71,11 +52,11 @@ export const CHECKLIST_TEMPLATES = [
   },
   {
     id: "3",
-    title: "Abastecimento",
-    description: "Registro de abastecimento do veículo",
-    iconName: "Fuel",
-    color: "bg-green-50",
-    estimatedTime: "2-3 min",
+    title: "Modelo Teste Vagner",
+    description: "Descrição Modelo de Checklist Teste Vagner",
+    iconName: "icon_3", // Bus
+    color: "color_3", // Laranja
+    estimatedTime: "5-10 min",
     items: [
       { id: "3-1", question: "Quilometragem atual", type: "number" },
       { id: "3-2", question: "Quantidade de combustível (litros)", type: "number" },
@@ -93,10 +74,10 @@ export const CHECKLIST_TEMPLATES = [
   },
   {
     id: "4",
-    title: "Ocorrência",
-    description: "Registro de ocorrências ou incidentes durante a operação",
-    iconName: "AlertTriangle",
-    color: "bg-red-50",
+    title: "Teste Modelo de Checklists Vagner - Duplo",
+    description: "teste",
+    iconName: "icon_4", // Ambulance
+    color: "color_4", // Roxo
     estimatedTime: "5-10 min",
     items: [
       {
@@ -120,11 +101,11 @@ export const CHECKLIST_TEMPLATES = [
   },
   {
     id: "5",
-    title: "Manutenção",
-    description: "Solicitação ou registro de manutenção do veículo",
-    iconName: "Tool",
-    color: "bg-purple-50",
-    estimatedTime: "5-8 min",
+    title: "testando modelo",
+    description: "Sem descrição",
+    iconName: "icon_5", // ClipboardCheck
+    color: "color_5", // Amarelo
+    estimatedTime: "5-10 min",
     items: [
       {
         id: "5-1",
@@ -149,8 +130,8 @@ export const CHECKLIST_TEMPLATES = [
     id: "6",
     title: "Inspeção Diária",
     description: "Checklist diário rápido para verificação básica do veículo",
-    iconName: "Calendar",
-    color: "bg-amber-50",
+    iconName: "icon_7", // Gauge
+    color: "color_3",
     estimatedTime: "3-5 min",
     items: [
       { id: "6-1", question: "Nível de óleo está adequado?", type: "boolean" },
@@ -166,8 +147,8 @@ export const CHECKLIST_TEMPLATES = [
     id: "7",
     title: "Inspeção de Ruídos",
     description: "Checklist para verificação de ruídos e sons do veículo",
-    iconName: "Mic",
-    color: "bg-indigo-50",
+    iconName: "icon_20", // Thermometer
+    color: "color_8",
     estimatedTime: "5-7 min",
     items: [
       { id: "7-1", question: "Som do motor em marcha lenta", type: "condition", requiresAudio: true },
@@ -180,3 +161,7 @@ export const CHECKLIST_TEMPLATES = [
     ],
   },
 ]
+
+// Vamos verificar os dados de exemplo para garantir que os códigos de ícones estão corretos
+
+// Modifique alguns dos templates para usar códigos de ícones diferentes e verificar se a mudança é refletida na interface

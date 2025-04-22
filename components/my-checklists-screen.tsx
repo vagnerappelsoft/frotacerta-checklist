@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { offlineStorage } from "@/lib/offline-storage"
 import { useOnlineStatus } from "@/hooks/use-online-status"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 
 interface MyChecklistsScreenProps {
   onViewChecklist?: (checklist: any) => void
@@ -170,8 +171,16 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
   return (
     <div className="container max-w-md mx-auto p-4 pb-20">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Meus Checklists</h1>
-        <p className="text-muted-foreground">Histórico e pendências</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Meus Checklists</h1>
+            <p className="text-muted-foreground">Histórico e pendências</p>
+          </div>
+          <Avatar>
+            <AvatarImage src="/placeholder.svg?height=40&width=40" alt="Motorista" />
+            <AvatarFallback>M</AvatarFallback>
+          </Avatar>
+        </div>
       </div>
 
       <div className="relative mb-6">

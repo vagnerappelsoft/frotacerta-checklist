@@ -161,6 +161,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("user_data", JSON.stringify(userData))
       setUser(userData)
 
+      // Desabilitar o modo mock após login bem-sucedido
+      apiService.setMockMode(false)
+
       // Verificar se é o primeiro login (não tem timestamp de última sincronização)
       const isFirstLogin = !localStorage.getItem("last_sync_time")
 

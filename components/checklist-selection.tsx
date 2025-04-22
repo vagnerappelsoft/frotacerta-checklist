@@ -91,7 +91,7 @@ export function ChecklistSelection({ onSelectChecklist }: ChecklistSelectionProp
         </div>
         <Avatar>
           <AvatarImage src="/placeholder.svg?height=40&width=40" alt="Motorista" />
-          <AvatarFallback>MO</AvatarFallback>
+          <AvatarFallback>M</AvatarFallback>
         </Avatar>
       </div>
 

@@ -1,21 +1,7 @@
 "use client"
 
-import {
-  Bell,
-  ChevronRight,
-  HelpCircle,
-  LogOut,
-  Moon,
-  User,
-  RefreshCw,
-  Info,
-  Download,
-  Database,
-  Trash2,
-} from "lucide-react"
+import { ChevronRight, HelpCircle, LogOut, User, RefreshCw, Info, Download, Database, Trash2 } from "lucide-react"
 import { Card } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useState, useEffect } from "react"
@@ -32,7 +18,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { syncService } from "@/lib/sync-service"
 import { offlineStorage } from "@/lib/offline-storage"
 import { SyncStatus } from "@/components/sync-status"
-import { ApiStatus } from "@/components/api-status"
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
 
@@ -158,9 +143,10 @@ export function SettingsScreen({ onNavigate, isOnline, pendingSyncs, onSyncNow }
       </div>
 
       <div className="flex items-center gap-4 mb-6">
+        {/* Status de sincronização */}
         <Avatar className="h-16 w-16">
           <AvatarImage src="/placeholder.svg?height=64&width=64" alt="Motorista" />
-          <AvatarFallback>{user?.name?.substring(0, 2).toUpperCase() || "US"}</AvatarFallback>
+          <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "M"}</AvatarFallback>
         </Avatar>
         <div>
           <h2 className="font-medium">{user?.name || "Usuário"}</h2>
@@ -170,35 +156,11 @@ export function SettingsScreen({ onNavigate, isOnline, pendingSyncs, onSyncNow }
         </div>
       </div>
 
-      {/* Status de sincronização */}
       <div className="space-y-4 mb-6">
         <SyncStatus />
-        <ApiStatus />
       </div>
 
       <div className="space-y-6">
-        <Card className="p-4">
-          <h3 className="font-medium mb-4">Preferências do Aplicativo</h3>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bell className="h-5 w-5 text-muted-foreground" />
-                <Label htmlFor="notifications">Notificações</Label>
-              </div>
-              <Switch id="notifications" defaultChecked />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Moon className="h-5 w-5 text-muted-foreground" />
-                <Label htmlFor="dark-mode">Modo Escuro</Label>
-              </div>
-              <Switch id="dark-mode" />
-            </div>
-          </div>
-        </Card>
-
         <Card className="divide-y">
           <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => onNavigate("profile")}>
             <div className="flex items-center gap-2">

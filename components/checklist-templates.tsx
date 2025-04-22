@@ -9,7 +9,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 // Importar dados de exemplo para uso offline
-import { CHECKLIST_TEMPLATES, getIconByName } from "@/data/mock-templates"
+import { CHECKLIST_TEMPLATES } from "@/data/mock-templates"
+import { getIconFromCode } from "@/lib/icon-utils"
+
+// Mapeamento de cores para os cards e ícones - usando cores mais vibrantes e distintas
+const colorMap: Record<string, string> = {
+  color_1: "#FF6B8A", // Rosa
+  color_2: "#8B5A2B", // Marrom
+  color_3: "#FF7043", // Laranja
+  color_4: "#9C27B0", // Roxo
+  color_5: "#FFC107", // Amarelo
+  color_6: "#00BCD4", // Ciano
+  color_7: "#E91E63", // Rosa escuro
+  color_8: "#607D8B", // Azul acinzentado
+  color_9: "#8BC34A", // Verde claro
+  color_10: "#FF5733", // Laranja avermelhado
+  // Adicionar cores padrão para casos onde o código de cor não é reconhecido
+  default: "#33C1FF", // Azul claro
+}
 
 // Define DEFAULT_TEMPLATES, using CHECKLIST_TEMPLATES as a fallback if it's available
 const DEFAULT_TEMPLATES = CHECKLIST_TEMPLATES || []
@@ -33,11 +50,11 @@ export function ChecklistTemplates({ onSelectTemplate, templates = DEFAULT_TEMPL
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Aplicar Checklist</h1>
-          <p className="text-muted-foreground">Selecione o tipo de checklist</p>
+          <p className="text-muted-foreground">Selecione o Modelo de checklist</p>
         </div>
         <Avatar>
           <AvatarImage src="/placeholder.svg?height=40&width=40" alt="Motorista" />
-          <AvatarFallback>MO</AvatarFallback>
+          <AvatarFallback>M</AvatarFallback>
         </Avatar>
       </div>
 
@@ -55,36 +72,56 @@ export function ChecklistTemplates({ onSelectTemplate, templates = DEFAULT_TEMPL
         <div className="grid grid-cols-1 gap-4 pb-4">
           {filteredTemplates.length > 0 ? (
             filteredTemplates.map((template) => {
-              // Extrair a cor base do template para uso consistente
-              const colorName = template.color.split("-")[1] || "blue"
-              const colorIntensity = "500"
-              const borderColorClass = `border-${colorName}-${colorIntensity}`
-              const bgColorClass = `bg-${colorName}-50`
-              const iconColorClass = `text-${colorName}-${colorIntensity}`
+              // Obter a cor do grupo ou usar uma cor padrão
+              const groupColor = template.group?.color || "default"
+              const color = colorMap[groupColor] || colorMap.default
+
+              // Converter a cor hex para classes de estilo inline
+              const borderStyle = { borderLeftColor: color }
+              const bgStyle = { backgroundColor: `${color}10` } // 10% de opacidade
+              const iconStyle = { color: color }
+
+              // Obter o ícone do grupo
+              const iconCode = template.group?.icon || "icon_1"
+
+              // Obter o nome do grupo
+              const groupName = template.group?.name || ""
+
+              // Log para depuração
+              console.log("Template completo:", template)
+              console.log("Dados do grupo:", template.group)
 
               return (
                 <Card
                   key={template.id}
-                  className={`cursor-pointer hover:shadow-md transition-all duration-200 border-l-4 ${borderColorClass} hover:scale-[1.01]`}
+                  className="cursor-pointer hover:shadow-md transition-all duration-200 border-l-4 hover:scale-[1.01]"
+                  style={borderStyle}
                   onClick={() => onSelectTemplate(template)}
                 >
-                  <CardHeader className={`pb-2 ${bgColorClass} rounded-tr-lg`}>
+                  <CardHeader className="pb-2 rounded-tr-lg" style={bgStyle}>
                     <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-full bg-white shadow-sm`}>
-                        {getIconByName(template.iconName, `h-6 w-6 ${iconColorClass}`)}
+                      <div className="p-2 rounded-full bg-white shadow-sm">
+                        {getIconFromCode(iconCode, "h-6 w-6", iconStyle)}
                       </div>
-                      <CardTitle className="text-lg">{template.title}</CardTitle>
+                      <div className="flex-1">
+                        <CardTitle className="text-lg">{template.name || template.title}</CardTitle>
+                        {groupName && (
+                          <div className="text-xs font-medium mt-1" style={iconStyle}>
+                            Grupo: {groupName}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="py-3">
-                    <p className="text-sm text-muted-foreground">{template.description}</p>
+                    <p className="text-sm text-muted-foreground">{template.description || "Sem descrição"}</p>
                   </CardContent>
                   <CardFooter className="flex justify-between pt-0 pb-3">
                     <div className="flex items-center text-sm text-muted-foreground">
                       <Clock className="mr-1 h-4 w-4" />
-                      <span>{template.estimatedTime}</span>
+                      <span>{template.estimatedTime || "5-10 min"}</span>
                     </div>
-                    <Button variant="ghost" size="sm" className={`${iconColorClass} hover:${bgColorClass} -mr-2`}>
+                    <Button variant="ghost" size="sm" style={iconStyle} className="hover:bg-opacity-10 -mr-2">
                       Selecionar
                       <ArrowRight className="ml-1 h-4 w-4" />
                     </Button>

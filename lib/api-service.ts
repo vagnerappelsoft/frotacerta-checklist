@@ -307,24 +307,37 @@ export class ApiService {
       }
 
       // Adaptar o formato dos modelos para o formato esperado pelo aplicativo
-      return models.map((model: any) => ({
-        id: model.id?.toString() || Math.random().toString(36).substring(2, 9),
-        title: model.name || model.title || "Modelo sem nome",
-        description: model.description || "Sem descrição",
-        iconName: model.group?.iconName || "ArrowRight", // Store just the icon name
-        color: model.group?.color || "bg-orange-50",
-        estimatedTime: "5-10 min",
-        items: Array.isArray(model.items)
-          ? model.items.map((item: any) => ({
-              id: item.id?.toString() || Math.random().toString(36).substring(2, 9),
-              question: item.name || item.question || "Pergunta sem texto",
-              type: this.mapAnswerTypeToAppType(item.answerTypeId || 1),
-              requiresPhoto: item.requiredImage || false,
-              requiresAudio: item.requiredAudio || false,
-              requiresObservation: item.requiredObservation || false,
-            }))
-          : [],
-      }))
+      return models.map((model: any) => {
+        // Log para depuração dos dados originais
+        console.log("Modelo original da API:", model)
+
+        // Preservar a estrutura original do grupo
+        const group = model.group || null
+
+        return {
+          id: model.id?.toString() || Math.random().toString(36).substring(2, 9),
+          name: model.name || "Modelo sem nome",
+          title: model.name || "Modelo sem nome", // Manter compatibilidade com código existente
+          description: model.description || "Sem descrição",
+          // Preservar a estrutura completa do grupo
+          group: group,
+          // Manter campos legados para compatibilidade
+          iconName: group?.icon || "icon_1",
+          color: group?.color || "color_1",
+          estimatedTime: "5-10 min",
+          items: Array.isArray(model.items)
+            ? model.items.map((item: any) => ({
+                id: item.id?.toString() || Math.random().toString(36).substring(2, 9),
+                question: item.name || "Pergunta sem texto", // Mapear name para question
+                name: item.name || "Pergunta sem texto", // Manter o campo original
+                type: this.mapAnswerTypeToAppType(item.answerTypeId || 1),
+                requiresPhoto: item.requiredImage || false,
+                requiresAudio: item.requiredAudio || false,
+                requiresObservation: item.requiredObservation || false,
+              }))
+            : [],
+        }
+      })
     } catch (error: any) {
       if (error.message === "MOCK_MODE") {
         return this.getChecklistTemplates()
