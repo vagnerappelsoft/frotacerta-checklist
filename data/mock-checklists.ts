@@ -1,0 +1,57 @@
+export const MOCK_CHECKLISTS = [
+  {
+    id: "1",
+    title: "Inspeção Diária - Caminhão de Entrega",
+    description: "Checklist de inspeção diária para caminhões de entrega antes de iniciar a rota",
+    vehicle: "Caminhão Mercedes-Benz Atego 2430",
+    licensePlate: "ABC1234",
+    dueDate: new Date(),
+    status: "pending",
+    items: [
+      { id: "1-1", question: "Nível de óleo do motor está adequado?", type: "boolean" },
+      { id: "1-2", question: "Nível de água do radiador está adequado?", type: "boolean" },
+      { id: "1-3", question: "Pressão dos pneus está correta?", type: "boolean" },
+      { id: "1-4", question: "Luzes funcionando corretamente?", type: "boolean" },
+      { id: "1-5", question: "Freios funcionando adequadamente?", type: "boolean" },
+      { id: "1-6", question: "Documentos do veículo estão em ordem?", type: "boolean" },
+      { id: "1-7", question: "Observações adicionais", type: "text" },
+    ],
+  },
+  {
+    id: "2",
+    title: "Inspeção Semanal - Van de Distribuição",
+    description: "Checklist de inspeção semanal para vans de distribuição",
+    vehicle: "Van Fiat Ducato Cargo",
+    licensePlate: "DEF5678",
+    dueDate: new Date(Date.now() + 86400000), // tomorrow
+    status: "pending",
+    items: [
+      { id: "2-1", question: "Nível de óleo do motor está adequado?", type: "boolean" },
+      { id: "2-2", question: "Nível de água do radiador está adequado?", type: "boolean" },
+      { id: "2-3", question: "Pressão dos pneus está correta?", type: "boolean" },
+      { id: "2-4", question: "Luzes funcionando corretamente?", type: "boolean" },
+      { id: "2-5", question: "Freios funcionando adequadamente?", type: "boolean" },
+      { id: "2-6", question: "Documentos do veículo estão em ordem?", type: "boolean" },
+      { id: "2-7", question: "Estado da suspensão", type: "rating" },
+      { id: "2-8", question: "Observações adicionais", type: "text" },
+    ],
+  },
+  {
+    id: "3",
+    title: "Inspeção Mensal - Frota Completa",
+    description: "Checklist de inspeção mensal detalhada para todos os veículos",
+    vehicle: "Todos os veículos da frota",
+    licensePlate: "Múltiplos",
+    dueDate: new Date(Date.now() + 259200000), // 3 days from now
+    status: "pending",
+    items: [
+      { id: "3-1", question: "Sistema de freios", type: "rating" },
+      { id: "3-2", question: "Sistema de direção", type: "rating" },
+      { id: "3-3", question: "Sistema de suspensão", type: "rating" },
+      { id: "3-4", question: "Sistema elétrico", type: "rating" },
+      { id: "3-5", question: "Condição dos pneus", type: "rating" },
+      { id: "3-6", question: "Nível de fluidos", type: "rating" },
+      { id: "3-7", question: "Observações detalhadas", type: "text" },
+    ],
+  },
+]
