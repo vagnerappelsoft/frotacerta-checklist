@@ -10,7 +10,10 @@ class SyncService {
   private syncInProgress: Set<string> = new Set() // Controle de itens em sincronização
 
   constructor() {
-    this.lastSyncTime = this.getLastSyncTime()
+    // Verificar se estamos no navegador antes de acessar localStorage
+    if (typeof window !== "undefined") {
+      this.lastSyncTime = this.getLastSyncTime()
+    }
   }
 
   addEventListener(listener: (event: any) => void) {
@@ -26,11 +29,21 @@ class SyncService {
   }
 
   getLastSyncTime(): Date | null {
+    // Verificar se estamos no navegador
+    if (typeof window === "undefined") {
+      return null
+    }
+
     const time = localStorage.getItem("last_sync_time")
     return time ? new Date(time) : null
   }
 
   setLastSyncTime(time: Date) {
+    // Verificar se estamos no navegador
+    if (typeof window === "undefined") {
+      return
+    }
+
     this.lastSyncTime = time
     localStorage.setItem("last_sync_time", time.toISOString())
   }
@@ -39,6 +52,11 @@ class SyncService {
   // Modifique o método performInitialSync para suportar sincronização incremental com timestamp
   // Modifique o método performInitialSync para garantir que o timestamp seja usado corretamente
   async performInitialSync(useTimestamp = false): Promise<boolean> {
+    // Verificar se estamos no navegador
+    if (typeof window === "undefined") {
+      return false
+    }
+
     if (this.isSyncing || !navigator.onLine) {
       return false
     }
@@ -399,6 +417,11 @@ class SyncService {
 
   // Melhore o método performIncrementalSync para lidar melhor com erros durante a sincronização
   async performIncrementalSync(): Promise<boolean> {
+    // Verificar se estamos no navegador
+    if (typeof window === "undefined") {
+      return false
+    }
+
     if (this.isSyncing || !navigator.onLine) {
       return false
     }
@@ -539,6 +562,11 @@ class SyncService {
   // Implementação do método checkAndSync
   // Modifique o método checkAndSync para usar a lógica de timestamp
   async checkAndSync(): Promise<boolean> {
+    // Verificar se estamos no navegador
+    if (typeof window === "undefined") {
+      return false
+    }
+
     // Se já estiver sincronizando ou estiver offline, não fazer nada
     if (this.isSyncing || !navigator.onLine) {
       return false
@@ -586,6 +614,11 @@ class SyncService {
   // Implementação do método forceSyncNow
   // Modifique o método forceSyncNow para usar a lógica de timestamp
   async forceSyncNow(): Promise<boolean> {
+    // Verificar se estamos no navegador
+    if (typeof window === "undefined") {
+      return false
+    }
+
     // Se já estiver sincronizando ou estiver offline, não fazer nada
     if (this.isSyncing || !navigator.onLine) {
       console.log("Não é possível sincronizar: já está sincronizando ou está offline")
@@ -652,6 +685,11 @@ class SyncService {
   // Implementação do método forceFullSync
   // Modifique o método forceFullSync para registrar o tipo de sincronização
   async forceFullSync(): Promise<boolean> {
+    // Verificar se estamos no navegador
+    if (typeof window === "undefined") {
+      return false
+    }
+
     // Verificar se já existe uma sincronização em andamento
     const syncInProgress = localStorage.getItem("sync_in_progress")
     if (syncInProgress) {
