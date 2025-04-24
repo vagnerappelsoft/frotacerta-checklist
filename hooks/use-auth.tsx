@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useRef, type ReactNode 
 import { apiService } from "@/lib/api-service"
 import { syncService } from "@/lib/sync-service"
 import { useRouter } from "next/navigation"
+import { offlineStorage } from "@/lib/offline-storage"
 
 // Definir o tipo para o usuário
 interface User {
@@ -137,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Função de login
+  // Atualizar a interface
   const handleLogin = async (username: string, password: string) => {
     setIsLoading(true)
 
@@ -149,6 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         apiService.setClientId(clientId)
       }
 
+      // Desativar explicitamente o modo mockado
+      apiService.setMockMode(false)
+
       // Chamar o serviço de API para fazer login
       const result = await apiService.login(username, password)
 
@@ -157,19 +161,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setupTokenRefresh(result.token)
       }
 
+      // Extrair o ID do usuário da resposta
+      const userId = result.user?.id || result.user?.userId || result.id || result.userId
+      console.log("ID do usuário extraído da resposta de login:", userId)
+
       // Armazenar dados do usuário
       const userData: User = {
-        id: result.user.id || "unknown",
-        name: result.user.name || username,
-        role: result.user.role || "user",
+        id: userId || "unknown",
+        userId: userId || "unknown", // Adicionar explicitamente o userId
+        name: result.user?.name || result.name || username,
+        role: result.user?.role || result.role || "user",
         ...result.user,
       }
 
+      console.log("Dados do usuário a serem armazenados:", userData)
       localStorage.setItem("user_data", JSON.stringify(userData))
       setUser(userData)
-
-      // Desabilitar o modo mock após login bem-sucedido
-      apiService.setMockMode(false)
 
       // Verificar se é o primeiro login (não tem timestamp de última sincronização)
       const isFirstLogin = !localStorage.getItem("last_sync_time")
@@ -181,31 +188,109 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : "Login realizado com sucesso! Sincronizando dados...",
       )
 
-      try {
-        console.log(`Iniciando sincronização ${isFirstLogin ? "completa" : "incremental"} após login...`)
+      // Definir um flag para evitar sincronizações duplicadas
+      const syncInProgress = localStorage.getItem("sync_in_progress")
 
-        // Forçar uma sincronização completa
-        const syncResult = await syncService.forceFullSync()
-        console.log("Sincronização inicial concluída com sucesso:", syncResult)
+      if (!syncInProgress) {
+        try {
+          // Marcar que uma sincronização está em andamento
+          localStorage.setItem("sync_in_progress", "true")
 
-        // Atualizar mensagem de sucesso
-        setSuccess("Sincronização concluída! Redirecionando...")
-      } catch (syncError) {
-        console.error("Erro na sincronização inicial:", syncError)
+          console.log(`Iniciando sincronização ${isFirstLogin ? "completa" : "incremental"} após login...`)
 
-        // Verificar se é um erro de API ou conexão
-        if (
-          syncError instanceof Error &&
-          (syncError.message.includes("404") ||
-            syncError.message.includes("Failed to fetch") ||
-            syncError.message.includes("Network"))
-        ) {
-          console.log("Erro de API ou conexão, continuando com dados locais...")
-          setSuccess("Login realizado com sucesso! Usando dados locais...")
-        } else {
-          // Outro tipo de erro
-          setSuccess("Login realizado com sucesso! Redirecionando...")
+          // Buscar todos os dados da API
+          const allData = await apiService.getAllAppData(userId)
+
+          // Armazenar os dados localmente
+          if (allData) {
+            // Armazenar veículos
+            if (allData.vehicles && Array.isArray(allData.vehicles)) {
+              console.log(`Armazenando ${allData.vehicles.length} veículos localmente...`)
+              for (const vehicle of allData.vehicles) {
+                // Garantir que o veículo tenha um ID como string
+                const formattedVehicle = {
+                  ...vehicle,
+                  id: vehicle.id?.toString() || `vehicle_${Math.random().toString(36).substring(2, 9)}`,
+                  fromApi: true, // Marcar como vindo da API
+                }
+                await offlineStorage.saveItem("vehicles", formattedVehicle)
+              }
+            }
+
+            // Armazenar modelos de checklist
+            if (allData.models && Array.isArray(allData.models)) {
+              console.log(`Armazenando ${allData.models.length} modelos de checklist localmente...`)
+              for (const model of allData.models) {
+                // Garantir que o modelo tenha um ID como string e campos necessários
+                const formattedModel = {
+                  ...model,
+                  id: model.id?.toString() || `model_${Math.random().toString(36).substring(2, 9)}`,
+                  title: model.name || "Modelo sem nome",
+                  description: model.description || "Sem descrição",
+                  fromApi: true, // Marcar como vindo da API
+                }
+                await offlineStorage.saveItem("templates", formattedModel)
+              }
+            }
+
+            // Armazenar checklists
+            if (allData.checklists && Array.isArray(allData.checklists)) {
+              console.log(`Armazenando ${allData.checklists.length} checklists localmente...`)
+              for (const checklist of allData.checklists) {
+                // Adaptar o formato do checklist para o formato esperado pelo aplicativo
+                const formattedChecklist = {
+                  id: checklist.id?.toString() || `checklist_${Math.random().toString(36).substring(2, 9)}`,
+                  title: checklist.name || "Checklist sem título",
+                  template: {
+                    id: checklist.model?.id?.toString() || "",
+                    title: checklist.model?.name || checklist.name || "Modelo sem nome",
+                    items: syncService.extractChecklistItems(checklist),
+                  },
+                  vehicle: syncService.extractVehicleInfo(checklist),
+                  responses: syncService.extractResponses(checklist),
+                  submittedAt: checklist.startDate || new Date().toISOString(),
+                  synced: true, // Marcar como sincronizado, pois veio da API
+                  userId: checklist.user?.id || userId || "unknown",
+                  fromApi: true, // Marcar como vindo da API
+                }
+                await offlineStorage.saveItem("checklists", formattedChecklist)
+              }
+            }
+          }
+
+          // Atualizar o timestamp da última sincronização
+          const now = new Date()
+          localStorage.setItem("last_sync_time", now.toISOString())
+          localStorage.setItem("last_sync_type", "full")
+
+          console.log("Sincronização inicial concluída com sucesso")
+          setSuccess("Sincronização concluída! Redirecionando...")
+
+          // Remover o flag de sincronização em andamento
+          localStorage.removeItem("sync_in_progress")
+        } catch (syncError) {
+          console.error("Erro na sincronização inicial:", syncError)
+
+          // Remover o flag de sincronização em andamento mesmo em caso de erro
+          localStorage.removeItem("sync_in_progress")
+
+          // Verificar se é um erro de API ou conexão
+          if (
+            syncError instanceof Error &&
+            (syncError.message.includes("404") ||
+              syncError.message.includes("Failed to fetch") ||
+              syncError.message.includes("Network"))
+          ) {
+            console.log("Erro de API ou conexão, continuando com dados locais...")
+            setSuccess("Login realizado com sucesso! Usando dados locais...")
+          } else {
+            // Outro tipo de erro
+            setSuccess("Login realizado com sucesso! Redirecionando...")
+          }
         }
+      } else {
+        console.log("Sincronização já em andamento, pulando sincronização duplicada")
+        setSuccess("Login realizado com sucesso! Sincronização já em andamento...")
       }
 
       // Redirecionar após um breve atraso

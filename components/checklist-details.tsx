@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronLeft, Download, Share2, ImageIcon, FileAudio, MapPin } from "lucide-react"
+import { ChevronLeft, Share2, ImageIcon, FileAudio, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -12,7 +12,7 @@ import { useState } from "react"
 
 interface ChecklistDetailsProps {
   checklist: any
-  onBack: () => void
+  onBack: (checklist?: any, action?: string) => void
 }
 
 export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
@@ -126,6 +126,14 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
                   {checklist.synced ? "Sincronizado" : "Pendente de sincronização"}
                 </Badge>
               </div>
+              {checklist.flowSize > 1 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Etapas:</span>
+                  <span className="font-medium">
+                    {checklist.flowStep || 1} de {checklist.flowSize}
+                  </span>
+                </div>
+              )}
               {/* Location section */}
               {checklist.responses?.location && (
                 <div className="mt-4 pt-4 border-t">
@@ -144,10 +152,14 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
               )}
             </CardContent>
             <CardFooter className="flex gap-2">
-              <Button variant="outline" className="flex-1">
-                <Download className="h-4 w-4 mr-2" />
-                Baixar PDF
-              </Button>
+              {checklist.flowSize > 1 && checklist.status?.id === 2 && (
+                <Button
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white"
+                  onClick={() => onBack(checklist, "continue")}
+                >
+                  Continuar Checklist
+                </Button>
+              )}
               <Button variant="outline" className="flex-1">
                 <Share2 className="h-4 w-4 mr-2" />
                 Compartilhar
@@ -324,8 +336,8 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
             </CardContent>
             <CardFooter>
               <Button variant="outline" className="w-full">
-                <Download className="h-4 w-4 mr-2" />
-                Baixar Relatório Completo
+                <Share2 className="h-4 w-4 mr-2" />
+                Compartilhar
               </Button>
             </CardFooter>
           </Card>

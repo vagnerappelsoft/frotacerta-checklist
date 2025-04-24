@@ -1,7 +1,7 @@
 // Constantes da aplicação
 
 // ID do cliente padrão
-export const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID || "frota-teste"
+export const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID || ""
 
 // URL da API
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api-checklist.frotacerta.com.br"

@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronRight, HelpCircle, LogOut, User, RefreshCw, Info, Download, Database, Trash2 } from "lucide-react"
+import { ChevronRight, HelpCircle, LogOut, RefreshCw, Info, Download, Database, Trash2 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -20,6 +20,7 @@ import { offlineStorage } from "@/lib/offline-storage"
 import { SyncStatus } from "@/components/sync-status"
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
+import { apiService } from "@/lib/api-service"
 
 interface SettingsScreenProps {
   onNavigate: (screen: string) => void
@@ -40,6 +41,8 @@ export function SettingsScreen({ onNavigate, isOnline, pendingSyncs, onSyncNow }
   const [fullSyncError, setFullSyncError] = useState<string | null>(null)
   const { user, logout } = useAuth()
   const router = useRouter()
+  const [setPendingSyncs] = useState<number>(0)
+  const [setOfflineMode] = useState<boolean>(false)
 
   // Atualizar o status de sincronização com base nas props
   useEffect(() => {
@@ -76,18 +79,58 @@ export function SettingsScreen({ onNavigate, isOnline, pendingSyncs, onSyncNow }
     }
   }, [])
 
+  // Modificar o método handleSync para garantir que ele está chamando corretamente a função onSyncNow
+
   const handleSync = () => {
     if (!isOnline || isSyncing) {
+      console.log("Não é possível sincronizar: offline ou já está sincronizando")
       return
     }
 
+    console.log("Iniciando sincronização manual...")
     setIsSyncing(true)
     setSyncStatus("syncing")
 
-    // Chamar a função de sincronização
-    if (onSyncNow) {
-      onSyncNow()
+    // Desativar o modo mockado para garantir que estamos usando a API real
+    apiService.setMockMode(false)
+
+    // Verificar se temos um clientId armazenado e usá-lo
+    const storedClientId = localStorage.getItem("client_id")
+    if (storedClientId) {
+      console.log(`Usando clientId armazenado: ${storedClientId}`)
+      apiService.setClientId(storedClientId)
     }
+
+    // Chamar diretamente o serviço de sincronização
+    syncService
+      .forceSyncNow()
+      .then((result) => {
+        console.log("Resultado da sincronização forçada:", result)
+
+        // Atualizar o contador de sincronizações pendentes
+        offlineStorage.getPendingSyncs().then((syncs) => {
+          setPendingSyncs(syncs.length)
+
+          // Se não houver mais sincronizações pendentes e estiver online, desativar o modo offline
+          if (syncs.length === 0 && isOnline) {
+            setOfflineMode(false)
+          }
+        })
+
+        setSyncStatus(result ? "synced" : "error")
+      })
+      .catch((error) => {
+        console.error("Erro ao forçar sincronização:", error)
+        setSyncStatus("error")
+      })
+      .finally(() => {
+        setIsSyncing(false)
+
+        // Chamar o callback onSyncNow se existir (para manter compatibilidade)
+        if (onSyncNow) {
+          onSyncNow()
+        }
+      })
   }
 
   const handleFullSync = async () => {
@@ -158,18 +201,25 @@ export function SettingsScreen({ onNavigate, isOnline, pendingSyncs, onSyncNow }
 
       <div className="space-y-4 mb-6">
         <SyncStatus />
+
+        {/* Botão de sincronização */}
+        <Button onClick={handleSync} disabled={isSyncing || !isOnline} className="w-full">
+          {isSyncing ? (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+              Sincronizando...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Sincronizar Agora
+            </>
+          )}
+        </Button>
       </div>
 
       <div className="space-y-6">
         <Card className="divide-y">
-          <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => onNavigate("profile")}>
-            <div className="flex items-center gap-2">
-              <User className="h-5 w-5 text-muted-foreground" />
-              <span>Meu Perfil</span>
-            </div>
-            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-          </div>
-
           <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => onNavigate("updates")}>
             <div className="flex items-center gap-2">
               <Info className="h-5 w-5 text-muted-foreground" />
@@ -202,6 +252,19 @@ export function SettingsScreen({ onNavigate, isOnline, pendingSyncs, onSyncNow }
             </div>
             <ChevronRight className="h-5 w-5 text-muted-foreground" />
           </div>
+
+          {process.env.NODE_ENV !== "production" && (
+            <div
+              className="p-4 flex items-center justify-between cursor-pointer"
+              onClick={() => onNavigate("api-debug")}
+            >
+              <div className="flex items-center gap-2">
+                <Database className="h-5 w-5 text-muted-foreground" />
+                <span>Visualizar Dados da API</span>
+              </div>
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            </div>
+          )}
 
           <div
             className="p-4 flex items-center justify-between cursor-pointer"

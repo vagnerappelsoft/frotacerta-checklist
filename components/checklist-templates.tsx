@@ -39,11 +39,19 @@ interface ChecklistTemplatesProps {
 export function ChecklistTemplates({ onSelectTemplate, templates = DEFAULT_TEMPLATES }: ChecklistTemplatesProps) {
   const [searchQuery, setSearchQuery] = useState("")
 
-  const filteredTemplates = templates.filter(
-    (template) =>
-      template.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      template.description.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  // Corrigir o problema de toLowerCase() em propriedades undefined
+  const filteredTemplates = templates.filter((template) => {
+    if (!template) return false
+
+    // Criar variáveis com fallbacks para evitar undefined
+    const title = template.title || template.name || ""
+    const description = template.description || ""
+
+    return (
+      title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      description.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  })
 
   return (
     <div className="container max-w-md mx-auto p-4">

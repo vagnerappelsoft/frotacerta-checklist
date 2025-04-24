@@ -1,13 +1,16 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { RefreshCw, Check, AlertCircle, Wifi, WifiOff } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Check, AlertCircle, Wifi, WifiOff } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { syncService } from "@/lib/sync-service"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 
+// Remover o botão de sincronização do componente SyncStatus para evitar duplicação
+// e deixar apenas o botão na tela de configurações
+
+// Modificar o componente para remover o botão de sincronização
 export function SyncStatus() {
   const [syncState, setSyncState] = useState<{
     isSyncing: boolean
@@ -78,10 +81,6 @@ export function SyncStatus() {
     }
   }, [])
 
-  const handleForceSyncNow = () => {
-    syncService.forceSyncNow()
-  }
-
   return (
     <Card className="w-full">
       <CardHeader className="pb-2">
@@ -126,27 +125,6 @@ export function SyncStatus() {
           )}
         </div>
       </CardContent>
-      <CardFooter>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={handleForceSyncNow}
-          disabled={!isOnline || syncState.isSyncing}
-        >
-          {syncState.isSyncing ? (
-            <>
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-              Sincronizando...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Sincronizar Agora
-            </>
-          )}
-        </Button>
-      </CardFooter>
     </Card>
   )
 }

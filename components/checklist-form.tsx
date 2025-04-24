@@ -80,7 +80,7 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
   // Check if current item requires photos, audio or observations
   const requiresPhoto = currentItem.requiresPhoto || currentItem.requiredImage || currentItem.type === "image" || false
   const requiresAudio = currentItem.requiresAudio || currentItem.requiredAudio || false
-  const requiresObservation = currentItem.requiresObservation || currentItem.requiredObservation || false
+  const requiresObservation = currentItem.requiredObservation || currentItem.requiredObservation || false
 
   const handleNext = () => {
     // Limpar qualquer erro de submissão anterior
@@ -110,19 +110,35 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
       newErrors[`${currentItem.id}`] = "Por favor, selecione uma opção"
     }
 
+    // Validate condition responses
+    if (currentItem.type === "condition" && responses[currentItem.id] === undefined) {
+      newErrors[currentItem.id] = "Por favor, selecione uma condição"
+    }
+
+    // Validate fuel responses
+    if (currentItem.type === "fuel" && responses[currentItem.id] === undefined) {
+      newErrors[currentItem.id] = "Por favor, selecione o nível"
+    }
+
+    // Check for required fields based on the item's requirements
+    // This should handle both old field names (requiresPhoto) and new field names (requiredImage)
+    const isPhotoRequired = currentItem.requiredImage || currentItem.requiresPhoto || false
+    const isAudioRequired = currentItem.requiredAudio || currentItem.requiresAudio || false
+    const isObservationRequired = currentItem.requiredObservation || currentItem.requiresObservation || false
+
     // Validate required photos
-    if (requiresPhoto && (!photos[currentItem.id] || photos[currentItem.id].length === 0)) {
+    if (isPhotoRequired && (!photos[currentItem.id] || photos[currentItem.id].length === 0)) {
       newErrors[`${currentItem.id}-photo`] = "É necessário adicionar pelo menos uma foto"
     }
 
     // Validate required audio
-    if (requiresAudio && (!audios[currentItem.id] || audios[currentItem.id].length === 0)) {
+    if (isAudioRequired && (!audios[currentItem.id] || audios[currentItem.id].length === 0)) {
       newErrors[`${currentItem.id}-audio`] = "É necessário gravar um áudio"
     }
 
     // Validate required observations
     if (
-      requiresObservation &&
+      isObservationRequired &&
       (!responses[`${currentItem.id}-observation`] || responses[`${currentItem.id}-observation`].trim() === "")
     ) {
       newErrors[`${currentItem.id}-observation`] = "É necessário adicionar uma observação"
@@ -221,30 +237,48 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
     const files = e.target.files
     if (!files || files.length === 0) return
 
-    // In a real app, you would upload these files to a server
-    // For this demo, we'll create object URLs to display them
+    // Processar cada arquivo para criar base64 diretamente
     const newPhotos = [...(photos[currentItem.id] || [])]
+    const promises: Promise<string>[] = []
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
-      const photoUrl = URL.createObjectURL(file)
-      newPhotos.push(photoUrl)
+      const promise = new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            resolve(event.target.result as string)
+          } else {
+            reject(new Error("Falha ao ler arquivo"))
+          }
+        }
+        reader.onerror = (error) => reject(error)
+        reader.readAsDataURL(file)
+      })
+      promises.push(promise)
     }
 
-    setPhotos({
-      ...photos,
-      [currentItem.id]: newPhotos,
-    })
-
-    setErrors({
-      ...errors,
-      [`${currentItem.id}-photo`]: undefined,
-    })
-
-    // Reset the file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
+    // Processar todos os arquivos e atualizar o estado
+    Promise.all(promises)
+      .then((dataUrls) => {
+        setPhotos({
+          ...photos,
+          [currentItem.id]: [...newPhotos, ...dataUrls],
+        })
+        setErrors({
+          ...errors,
+          [`${currentItem.id}-photo`]: undefined,
+        })
+      })
+      .catch((error) => {
+        console.error("Erro ao processar fotos:", error)
+      })
+      .finally(() => {
+        // Reset the file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ""
+        }
+      })
   }
 
   const removePhoto = (index: number) => {
@@ -269,10 +303,8 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
     try {
       console.log("Foto capturada, processando...")
 
-      // Criar uma URL de objeto para o blob
-      const objectUrl = URL.createObjectURL(photoBlob)
-
-      const newPhotos = [...(photos[currentItem.id] || []), objectUrl]
+      // Usar diretamente a URL de dados base64 em vez de criar uma URL de blob
+      const newPhotos = [...(photos[currentItem.id] || []), photoUrl]
 
       setPhotos({
         ...photos,
@@ -294,33 +326,40 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
   }
 
   const handleAudioSaved = (audioBlob: Blob, audioUrl: string) => {
-    const newAudios = [...(audios[currentItem.id] || []), audioUrl]
+    // Converter o blob para base64 diretamente
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64data = reader.result as string
+      const newAudios = [...(audios[currentItem.id] || []), base64data]
 
-    setAudios({
-      ...audios,
-      [currentItem.id]: newAudios,
-    })
+      setAudios({
+        ...audios,
+        [currentItem.id]: newAudios,
+      })
 
-    setErrors({
-      ...errors,
-      [`${currentItem.id}-audio`]: undefined,
-    })
+      setErrors({
+        ...errors,
+        [`${currentItem.id}-audio`]: undefined,
+      })
 
-    setShowAudioDialog(false)
+      setShowAudioDialog(false)
+    }
+    reader.onerror = (error) => {
+      console.error("Erro ao converter áudio para base64:", error)
+      alert("Ocorreu um erro ao processar o áudio. Por favor, tente novamente.")
+      setShowAudioDialog(false)
+    }
+    reader.readAsDataURL(audioBlob)
   }
 
   const removeAudio = (index: number) => {
     const newAudios = [...(audios[currentItem.id] || [])]
-    const removedUrl = newAudios[index]
     newAudios.splice(index, 1)
 
     setAudios({
       ...audios,
       [currentItem.id]: newAudios,
     })
-
-    // Liberar a URL do objeto
-    URL.revokeObjectURL(removedUrl)
 
     if (requiresAudio && newAudios.length === 0) {
       setErrors({
@@ -376,6 +415,11 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
 
   // Renderizar os complementos (fotos e áudios)
   const renderMediaAttachments = () => {
+    // Check both field name variations for each requirement
+    const isPhotoRequired = currentItem.requiredImage || currentItem.requiresPhoto || false
+    const isAudioRequired = currentItem.requiredAudio || currentItem.requiresAudio || false
+    const isObservationRequired = currentItem.requiredObservation || currentItem.requiresObservation || false
+
     return (
       <div className="space-y-6 mt-6 border-t pt-6">
         {/* Seção de fotos */}
@@ -383,7 +427,7 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
           <div className="flex items-center justify-between">
             <Label className="text-base font-medium flex items-center">
               Fotos
-              {requiresPhoto && <span className="text-blue-500 ml-1">*</span>}
+              {isPhotoRequired && <span className="text-blue-500 ml-1">*</span>}
             </Label>
             <Button variant="outline" size="sm" className="text-xs" onClick={openCamera}>
               <Camera className="h-3 w-3 mr-1" />
@@ -436,7 +480,7 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
           <div className="flex items-center justify-between">
             <Label className="text-base font-medium flex items-center">
               Áudios
-              {requiresAudio && <span className="text-blue-500 ml-1">*</span>}
+              {isAudioRequired && <span className="text-blue-500 ml-1">*</span>}
             </Label>
             <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowAudioDialog(true)}>
               <Mic className="h-3 w-3 mr-1" />
@@ -498,6 +542,30 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
     }
   }, [photos, audios])
 
+  // Adicione um efeito para verificar e carregar respostas existentes quando continuar um checklist
+  // Adicione este efeito após os hooks existentes mas antes do return:
+
+  // Verificar e carregar dados de um checklist em continuação
+  useEffect(() => {
+    const continuingChecklistData = localStorage.getItem("continuing_checklist")
+    if (continuingChecklistData) {
+      try {
+        const parsedData = JSON.parse(continuingChecklistData)
+
+        // Se há respostas anteriores, adicionar um aviso na interface
+        if (parsedData.previousResponses) {
+          console.log("Carregando respostas anteriores de checklist em continuação:", parsedData.id)
+
+          // Não vamos preencher respostas anteriores para não confundir o usuário
+          // Isso é apenas um efeito informativo
+          // Em uma implementação mais completa, poderíamos carregar algumas informações específicas
+        }
+      } catch (error) {
+        console.error("Erro ao processar dados de checklist em continuação:", error)
+      }
+    }
+  }, [])
+
   const handleLocationCaptured = (location: any) => {
     setLocationData(location)
     setShowLocationDialog(false)
@@ -539,7 +607,21 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
         }
       }
 
+      // Buscar informações de um checklist em continuação, se existir
+      const continuingChecklistData = localStorage.getItem("continuing_checklist")
+      let previousResponses = {}
+
+      if (continuingChecklistData) {
+        try {
+          const parsedData = JSON.parse(continuingChecklistData)
+          previousResponses = parsedData.previousResponses || {}
+        } catch (error) {
+          console.error("Erro ao processar dados de checklist em continuação:", error)
+        }
+      }
+
       const finalData = {
+        ...previousResponses, // Incluir respostas anteriores
         ...responses,
         photos: serializablePhotos,
         audios: serializableAudios,
@@ -566,11 +648,20 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
         <Button variant="ghost" size="icon" onClick={handlePrevious}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
+        {/* Modifique o título da página para mostrar quando se trata da continuação de um checklist */}
+        {/* Encontre a div que contém o título do checklist (linha 629) e substitua: */}
         <div className="ml-2">
           <h1 className="text-xl font-bold">{checklist.title}</h1>
-          <p className="text-sm text-muted-foreground">
-            {checklist.vehicle} ({checklist.licensePlate})
-          </p>
+          <div className="flex items-center">
+            <p className="text-sm text-muted-foreground">
+              {checklist.vehicle} ({checklist.licensePlate})
+            </p>
+            {localStorage.getItem("continuing_checklist") && (
+              <span className="ml-2 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 border border-blue-200">
+                Etapa 2 de 2
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -586,6 +677,7 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
 
       <ScrollArea className="h-[calc(100vh-250px)]">
         <Card className="mb-6">
+          {/* Container of CardHeader */}
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Item {currentStep + 1}</CardTitle>
@@ -606,9 +698,18 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
                       {currentItem.type === "number" && "Informe o valor numérico solicitado."}
                       {currentItem.type === "select" && "Selecione uma das opções disponíveis."}
                       {currentItem.type === "multiselect" && "Selecione uma ou mais opções aplicáveis."}
-                      {requiresPhoto && <div className="mt-2 text-blue-500">Este item requer foto(s).</div>}
-                      {requiresAudio && <div className="mt-2 text-blue-500">Este item requer gravação de áudio.</div>}
-                      {requiresObservation && <div className="mt-2 text-blue-500">Este item requer observações.</div>}
+                      {currentItem.type === "condition" &&
+                        "Avalie a condição do item como Ótimo, Bom, Regular ou Ruim."}
+                      {currentItem.type === "fuel" && "Selecione o nível de combustível ou fluido."}
+                      {(currentItem.requiredImage || currentItem.requiresPhoto) && (
+                        <div className="mt-2 text-blue-500">Este item requer foto(s).</div>
+                      )}
+                      {(currentItem.requiredAudio || currentItem.requiresAudio) && (
+                        <div className="mt-2 text-blue-500">Este item requer gravação de áudio.</div>
+                      )}
+                      {(currentItem.requiredObservation || currentItem.requiresObservation) && (
+                        <div className="mt-2 text-blue-500">Este item requer observações.</div>
+                      )}
                     </DialogDescription>
                   </DialogHeader>
                 </DialogContent>
@@ -616,7 +717,12 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
             </div>
             <CardDescription className="text-base font-medium">
               {currentItem.question}
-              {(requiresPhoto || requiresAudio || requiresObservation) && <span className="text-blue-500 ml-1">*</span>}
+              {(currentItem.requiredImage ||
+                currentItem.requiresPhoto ||
+                currentItem.requiredAudio ||
+                currentItem.requiresAudio ||
+                currentItem.requiredObservation ||
+                currentItem.requiresObservation) && <span className="text-blue-500 ml-1">*</span>}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -630,7 +736,9 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
                     onClick={() => handleBooleanResponse(true)}
                   >
                     <ThumbsUp className="mr-2 h-4 w-4" />
-                    Sim
+                    {currentItem.answerValues && currentItem.answerValues.length > 0
+                      ? currentItem.answerValues[0]
+                      : "Sim"}
                   </Button>
                   <Button
                     type="button"
@@ -639,7 +747,9 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
                     onClick={() => handleBooleanResponse(false)}
                   >
                     <ThumbsDown className="mr-2 h-4 w-4" />
-                    Não
+                    {currentItem.answerValues && currentItem.answerValues.length > 1
+                      ? currentItem.answerValues[1]
+                      : "Não"}
                   </Button>
                 </div>
                 {errors[currentItem.id] && (
@@ -751,33 +861,26 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
 
             {currentItem.type === "condition" && (
               <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    type="button"
-                    variant={responses[currentItem.id] === "bom" ? "default" : "outline"}
-                    className={responses[currentItem.id] === "bom" ? "bg-green-500 hover:bg-green-600" : ""}
-                    onClick={() => handleConditionResponse("bom")}
-                  >
-                    Bom
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={responses[currentItem.id] === "regular" ? "default" : "outline"}
-                    className={
-                      responses[currentItem.id] === "regular" ? "bg-yellow-500 hover:bg-yellow-600 text-white" : ""
-                    }
-                    onClick={() => handleConditionResponse("regular")}
-                  >
-                    Regular
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={responses[currentItem.id] === "ruim" ? "default" : "outline"}
-                    className={responses[currentItem.id] === "ruim" ? "bg-red-500 hover:bg-red-600" : ""}
-                    onClick={() => handleConditionResponse("ruim")}
-                  >
-                    Ruim
-                  </Button>
+                <div className="grid grid-cols-4 gap-2">
+                  {(currentItem.answerValues || ["Ótimo", "Bom", "Regular", "Ruim"]).map((value, index) => (
+                    <Button
+                      key={index}
+                      type="button"
+                      variant={responses[currentItem.id] === value.toLowerCase() ? "default" : "outline"}
+                      className={
+                        responses[currentItem.id] === value.toLowerCase()
+                          ? index === 0 || index === 1
+                            ? "bg-green-500 hover:bg-green-600"
+                            : index === 2
+                              ? "bg-yellow-500 hover:bg-yellow-600 text-white"
+                              : "bg-red-500 hover:bg-red-600"
+                          : ""
+                      }
+                      onClick={() => handleConditionResponse(value.toLowerCase())}
+                    >
+                      {value}
+                    </Button>
+                  ))}
                 </div>
                 {errors[currentItem.id] && (
                   <Alert variant="destructive">
@@ -791,36 +894,31 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
 
             {currentItem.type === "fuel" && (
               <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    type="button"
-                    variant={responses[currentItem.id] === "cheio" ? "default" : "outline"}
-                    className={responses[currentItem.id] === "cheio" ? "bg-green-500 hover:bg-green-600" : ""}
-                    onClick={() => handleFuelLevelResponse("cheio")}
-                  >
-                    <Droplet className="mr-2 h-4 w-4" />
-                    Cheio
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={responses[currentItem.id] === "meio" ? "default" : "outline"}
-                    className={
-                      responses[currentItem.id] === "meio" ? "bg-yellow-500 hover:bg-yellow-600 text-white" : ""
-                    }
-                    onClick={() => handleFuelLevelResponse("meio")}
-                  >
-                    <DropletHalf className="mr-2 h-4 w-4" />
-                    1/2
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={responses[currentItem.id] === "vazio" ? "default" : "outline"}
-                    className={responses[currentItem.id] === "vazio" ? "bg-red-500 hover:bg-red-600" : ""}
-                    onClick={() => handleFuelLevelResponse("vazio")}
-                  >
-                    <DropletOff className="mr-2 h-4 w-4" />
-                    Vazio
-                  </Button>
+                <div className="grid grid-cols-5 gap-2">
+                  {(currentItem.answerValues || ["Cheio", "1/4", "1/2", "3/4", "Vazio"]).map((value, index) => (
+                    <Button
+                      key={index}
+                      type="button"
+                      variant={responses[currentItem.id] === value.toLowerCase() ? "default" : "outline"}
+                      className={
+                        responses[currentItem.id] === value.toLowerCase()
+                          ? index === 0
+                            ? "bg-green-500 hover:bg-green-600"
+                            : index === 4
+                              ? "bg-red-500 hover:bg-red-600"
+                              : "bg-yellow-500 hover:bg-yellow-600 text-white"
+                          : ""
+                      }
+                      onClick={() => handleFuelLevelResponse(value.toLowerCase())}
+                    >
+                      <div className="flex flex-col items-center">
+                        {index === 0 && <Droplet className="h-4 w-4 mb-1" />}
+                        {index > 0 && index < 4 && <DropletHalf className="h-4 w-4 mb-1" />}
+                        {index === 4 && <DropletOff className="h-4 w-4 mb-1" />}
+                        {value}
+                      </div>
+                    </Button>
+                  ))}
                 </div>
                 {errors[currentItem.id] && (
                   <Alert variant="destructive">

@@ -12,8 +12,10 @@ import { offlineStorage } from "@/lib/offline-storage"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 
+// Atualize a interface MyChecklistsScreenProps para incluir o parâmetro de ação
 interface MyChecklistsScreenProps {
   onViewChecklist?: (checklist: any) => void
+  onViewChecklist?: (checklist: any, action?: string) => void
   offlineChecklists?: any[] // Checklists para uso offline
 }
 
@@ -24,72 +26,24 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
   const [isLoading, setIsLoading] = useState(true)
   const { isOnline } = useOnlineStatus()
 
-  // Carregar checklists do armazenamento local
-  useEffect(() => {
-    const loadChecklists = async () => {
-      try {
-        setIsLoading(true)
-
-        // Se temos checklists offline fornecidos, usá-los
-        if (offlineChecklists) {
-          setCompletedChecklists(offlineChecklists)
-          setPendingChecklists([])
-          setIsLoading(false)
-          return
-        }
-
-        // Caso contrário, carregar do armazenamento local
-        const allChecklists = await offlineStorage.getAllItems<any>("checklists")
-
-        // Separar em concluídos e pendentes
-        const completed = allChecklists.filter((checklist) => checklist.submittedAt)
-        const pending = [] // Em um app real, você teria checklists pendentes
-
-        // Ordenar por data (mais recentes primeiro)
-        completed.sort((a, b) => {
-          const dateA = new Date(a.submittedAt).getTime()
-          const dateB = new Date(b.submittedAt).getTime()
-          return dateB - dateA
-        })
-
-        setCompletedChecklists(completed)
-        setPendingChecklists(pending)
-      } catch (error) {
-        console.error("Erro ao carregar checklists:", error)
-      } finally {
-        setIsLoading(false)
-      }
+  // Função auxiliar para obter a data mais relevante de um checklist
+  // Movida para o início do componente para evitar o erro "Cannot access before initialization"
+  const getRelevantDate = (checklist: any): number => {
+    // Try submittedAt first (our app's format)
+    if (checklist.submittedAt) {
+      return new Date(checklist.submittedAt).getTime()
     }
-
-    loadChecklists()
-  }, [offlineChecklists])
-
-  // Filtrar checklists com base na pesquisa
-  const filteredCompleted = completedChecklists.filter((checklist) => {
-    // Verificar se o checklist tem as propriedades necessárias
-    const title = checklist.template?.title || checklist.title || ""
-    const vehicleName = checklist.vehicle?.name || checklist.vehicle || ""
-    const licensePlate = checklist.vehicle?.licensePlate || checklist.licensePlate || ""
-
-    return (
-      title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vehicleName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      licensePlate.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  })
-
-  const filteredPending = pendingChecklists.filter((checklist) => {
-    // Verificar se o checklist tem as propriedades necessárias
-    const title = checklist.template?.title || checklist.title || ""
-    const vehicleName = checklist.vehicle?.name || checklist.vehicle || ""
-    const licensePlate = checklist.vehicle?.licensePlate || checklist.licensePlate || ""
-
-    return (
-      title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vehicleName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      licensePlate.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  })
+    // Then try finishDate (API format)
+    if (checklist.finishDate) {
+      return new Date(checklist.finishDate).getTime()
+    }
+    // Finally fall back to startDate (API format)
+    if (checklist.startDate) {
+      return new Date(checklist.startDate).getTime()
+    }
+    // If no valid date is found, use current time as fallback
+    return Date.now()
+  }
 
   // Função para contar problemas em um checklist
   const countIssues = (checklist: any) => {
@@ -109,13 +63,145 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
     return count
   }
 
-  // Renderizar um checklist concluído
+  // Carregar checklists do armazenamento local
+  useEffect(() => {
+    const loadChecklists = async () => {
+      try {
+        setIsLoading(true)
+
+        // Se temos checklists offline fornecidos, usá-los
+        if (offlineChecklists) {
+          // Separar em concluídos e em andamento
+          const completed = offlineChecklists.filter(
+            (checklist) =>
+              checklist.status?.id === 1 ||
+              (checklist.submittedAt && (!checklist.flowSize || checklist.flowSize === 1)),
+          )
+
+          const pending = offlineChecklists.filter(
+            (checklist) =>
+              checklist.status?.id === 2 || (checklist.flowSize > 1 && checklist.flowStep < checklist.flowSize),
+          )
+
+          // Ordenar os checklists concluídos por data (mais recentes primeiro)
+          completed.sort((a, b) => {
+            return getRelevantDate(b) - getRelevantDate(a)
+          })
+
+          setCompletedChecklists(completed)
+          setPendingChecklists(pending)
+          setIsLoading(false)
+          return
+        }
+
+        // Caso contrário, carregar do armazenamento local
+        const allChecklists = await offlineStorage.getAllItems<any>("checklists")
+
+        // Separar em concluídos e em andamento
+        const completed = allChecklists.filter(
+          (checklist) =>
+            checklist.status?.id === 1 || (checklist.submittedAt && (!checklist.flowSize || checklist.flowSize === 1)),
+        )
+
+        const pending = allChecklists.filter(
+          (checklist) =>
+            checklist.status?.id === 2 || (checklist.flowSize > 1 && checklist.flowStep < checklist.flowSize),
+        )
+
+        // Ordenar por data (mais recentes primeiro)
+        completed.sort((a, b) => {
+          return getRelevantDate(b) - getRelevantDate(a)
+        })
+
+        setCompletedChecklists(completed)
+        setPendingChecklists(pending)
+      } catch (error) {
+        console.error("Erro ao carregar checklists:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadChecklists()
+  }, [offlineChecklists])
+
+  // Filtrar e ordenar checklists concluídos com base na pesquisa
+  const filteredCompleted = completedChecklists
+    .filter((checklist) => {
+      // Verificar se o checklist tem as propriedades necessárias
+      const title = checklist.template?.title || checklist.title || ""
+      const vehicleName = checklist.vehicle?.name || checklist.vehicle || ""
+      const licensePlate = checklist.vehicle?.licensePlate || checklist.licensePlate || ""
+
+      return (
+        title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        vehicleName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        licensePlate.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    })
+    // Garantir que os checklists filtrados também estejam ordenados
+    .sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
+
+  const filteredPending = pendingChecklists.filter((checklist) => {
+    // Verificar se o checklist tem as propriedades necessárias
+    const title = checklist.template?.title || checklist.title || ""
+    const vehicleName = checklist.vehicle?.name || checklist.vehicle || ""
+    const licensePlate = checklist.vehicle?.licensePlate || checklist.licensePlate || ""
+
+    return (
+      title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      vehicleName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      licensePlate.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  })
+
+  // Modificar a função renderCompletedChecklist para lidar corretamente com os dados da API
   const renderCompletedChecklist = (checklist: any) => {
     const issuesCount = countIssues(checklist)
-    const submittedDate = new Date(checklist.submittedAt)
-    const title = checklist.template?.title || checklist.title
-    const vehicleName = checklist.vehicle?.name || checklist.vehicle
-    const licensePlate = checklist.vehicle?.licensePlate || checklist.licensePlate
+
+    // Verificar se submittedAt existe e é uma data válida
+    let submittedDate
+    try {
+      // Try to get the most relevant date in order of preference
+      if (checklist.submittedAt) {
+        submittedDate = new Date(checklist.submittedAt)
+      } else if (checklist.finishDate) {
+        submittedDate = new Date(checklist.finishDate)
+      } else if (checklist.startDate) {
+        submittedDate = new Date(checklist.startDate)
+      } else {
+        submittedDate = new Date() // Fallback para data atual
+      }
+
+      // Verificar se a data é válida
+      if (isNaN(submittedDate.getTime())) {
+        submittedDate = new Date() // Fallback para data atual
+      }
+    } catch (error) {
+      submittedDate = new Date() // Fallback para data atual
+    }
+
+    // Extrair título do checklist com fallbacks
+    const title =
+      checklist.template?.title ||
+      checklist.template?.name ||
+      checklist.model?.name ||
+      checklist.name ||
+      checklist.title ||
+      "Checklist sem título"
+
+    // Extrair informações do veículo com fallbacks
+    const vehicleData = checklist.vehicleData && checklist.vehicleData.length > 0 ? checklist.vehicleData[0] : null
+
+    const vehicleName =
+      vehicleData?.vehicle?.name || checklist.vehicle?.name || checklist.vehicle || "Veículo não especificado"
+
+    const licensePlate =
+      vehicleData?.vehicle?.plate ||
+      checklist.vehicle?.licensePlate ||
+      checklist.licensePlate ||
+      vehicleData?.vehicle?.plate ||
+      "Sem placa"
 
     return (
       <Card key={checklist.id} className="cursor-pointer hover:shadow-md transition-shadow">
@@ -195,7 +281,7 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
 
       <Tabs defaultValue="completed" className="mb-6">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="pending">Pendentes ({filteredPending.length})</TabsTrigger>
+          <TabsTrigger value="pending">Em Andamento ({filteredPending.length})</TabsTrigger>
           <TabsTrigger value="completed">Concluídos ({filteredCompleted.length})</TabsTrigger>
         </TabsList>
 
@@ -209,13 +295,51 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
               <div className="space-y-4 pb-4">
                 {filteredPending.map((checklist) => (
                   <Card key={checklist.id} className="cursor-pointer hover:shadow-md transition-shadow">
-                    {/* Conteúdo do checklist pendente */}
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <CardTitle className="text-lg">
+                          {checklist.template?.title || checklist.title || "Checklist sem título"}
+                        </CardTitle>
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                          Etapa 2 pendente
+                        </Badge>
+                      </div>
+                      <CardDescription>
+                        {checklist.vehicle?.name || checklist.vehicle || "Veículo não especificado"}(
+                        {checklist.vehicle?.licensePlate || checklist.licensePlate || "Sem placa"})
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pb-2">
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="mr-2 h-4 w-4" />
+                        <span>
+                          Iniciado em:{" "}
+                          {new Date(checklist.startDate || checklist.submittedAt).toLocaleDateString("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    </CardContent>
+                    <CardFooter>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => onViewChecklist && onViewChecklist(checklist)}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Continuar Checklist
+                      </Button>
+                    </CardFooter>
                   </Card>
                 ))}
               </div>
             ) : (
               <div className="text-center py-8">
-                <p className="text-muted-foreground">Nenhum checklist pendente encontrado</p>
+                <p className="text-muted-foreground">Nenhum checklist em andamento</p>
               </div>
             )}
           </ScrollArea>

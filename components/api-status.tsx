@@ -1,11 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Wifi, WifiOff, Database, RefreshCw } from "lucide-react"
+import { Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
 import { apiService } from "@/lib/api-service"
 import { syncService } from "@/lib/sync-service"
 
@@ -44,6 +42,12 @@ export function ApiStatus() {
   }, [])
 
   const handleToggleMockMode = (checked: boolean) => {
+    // Em produção, não permitir ativar o modo mock
+    if (process.env.NODE_ENV === "production" && checked) {
+      alert("Modo de dados de exemplo não disponível em produção")
+      return
+    }
+
     apiService.setMockMode(checked)
     setIsMockMode(checked)
 
@@ -118,14 +122,6 @@ export function ApiStatus() {
             Client ID: <span className="font-mono text-xs">{clientId}</span>
           </p>
           <p>Modo atual: {isMockMode ? "Dados de exemplo" : "API real"}</p>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-muted-foreground" />
-            <Label htmlFor="mock-mode">Usar dados de exemplo</Label>
-          </div>
-          <Switch id="mock-mode" checked={isMockMode} onCheckedChange={handleToggleMockMode} />
         </div>
       </CardContent>
       <CardFooter>

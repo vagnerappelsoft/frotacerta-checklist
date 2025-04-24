@@ -1,691 +1,709 @@
-import { offlineStorage } from "./offline-storage"
-import { apiService } from "./api-service"
-import { sanitizeForStorage } from "./utils"
+import { apiService } from "@/lib/api-service"
+import { offlineStorage } from "@/lib/offline-storage"
 
-// Interface para os eventos de sincronização
-interface SyncEvent {
-  type: "start" | "progress" | "complete" | "error"
-  message: string
-  data?: any
-}
-
-// Tipo para os callbacks de eventos
-type SyncEventCallback = (event: SyncEvent) => void
-
-// Classe para gerenciar a sincronização de dados
-export class SyncService {
-  private listeners: SyncEventCallback[] = []
-  private isSyncing = false
-  private autoSyncInterval: NodeJS.Timeout | null = null
-  private retryTimeout: NodeJS.Timeout | null = null
-  private syncTimeoutId: NodeJS.Timeout | null = null
+class SyncService {
+  private listeners: ((event: any) => void)[] = []
+  public isSyncing = false
   private lastSyncTime: Date | null = null
   private retryCount = 0
-  private maxRetries = 3
+  private readonly maxRetries = 3
+  private syncInProgress: Set<string> = new Set() // Controle de itens em sincronização
 
   constructor() {
-    // Iniciar verificação automática de sincronização quando online
-    if (typeof window !== "undefined") {
-      window.addEventListener("online", this.handleOnline)
-      window.addEventListener("offline", this.handleOffline)
-
-      // Verificar se há uma sincronização inicial pendente
-      this.checkInitialSync()
-    }
+    this.lastSyncTime = this.getLastSyncTime()
   }
 
-  // Verificar se precisamos fazer uma sincronização inicial
-  private async checkInitialSync() {
-    try {
-      const lastSync = localStorage.getItem("last_sync_time")
-      const needsInitialSync = !lastSync
-
-      if (needsInitialSync && navigator.onLine) {
-        console.log("Primeira execução detectada, realizando sincronização inicial...")
-        await this.performInitialSync()
-      }
-    } catch (error) {
-      console.error("Erro ao verificar sincronização inicial:", error)
-
-      // If we're using mock data, we can still proceed
-      if (apiService.isUsingMockData()) {
-        console.log("Usando dados de exemplo devido a erro de conexão com a API")
-        await this.loadMockData()
-      }
-    }
+  addEventListener(listener: (event: any) => void) {
+    this.listeners.push(listener)
   }
 
-  // Carregar dados de exemplo quando a API não está disponível
-  private async loadMockData() {
-    try {
-      this.dispatchEvent({
-        type: "start",
-        message: "Carregando dados de exemplo para uso offline",
-      })
-
-      // 1. Buscar templates
-      const templates = await apiService.getChecklistTemplates()
-      for (const template of templates) {
-        await offlineStorage.saveItem("templates", sanitizeForStorage(template))
-      }
-
-      // 2. Buscar veículos
-      const vehicles = await apiService.getVehicles()
-      for (const vehicle of vehicles) {
-        await offlineStorage.saveItem("vehicles", sanitizeForStorage(vehicle))
-      }
-
-      // Atualizar timestamp da última sincronização
-      this.updateLastSyncTime()
-
-      this.dispatchEvent({
-        type: "complete",
-        message: "Dados de exemplo carregados com sucesso",
-      })
-
-      return true
-    } catch (error) {
-      console.error("Erro ao carregar dados de exemplo:", error)
-      this.dispatchEvent({
-        type: "error",
-        message: `Erro ao carregar dados de exemplo: ${error}`,
-        data: { error },
-      })
-      return false
-    }
+  removeEventListener(listener: (event: any) => void) {
+    this.listeners = this.listeners.filter((l) => l !== listener)
   }
 
-  // Modificar o método performInitialSync para verificar se é o primeiro acesso
-
-  private async performInitialSync() {
-    this.dispatchEvent({
-      type: "start",
-      message: "Realizando sincronização inicial de dados",
-    })
-
-    try {
-      // Check if we're in mock mode
-      if (apiService.isUsingMockData()) {
-        return await this.loadMockData()
-      }
-
-      // Verificar se é o primeiro acesso (não tem timestamp de última sincronização)
-      const isFirstAccess = !localStorage.getItem("last_sync_time")
-      console.log(`Sincronização inicial - Primeiro acesso: ${isFirstAccess}`)
-
-      // 1. Buscar templates
-      let templates = []
-      try {
-        // Obter o timestamp da última sincronização
-        const lastSyncTime = this.getLastSyncTime()
-
-        // No primeiro acesso, não usar filtro de data para obter todos os dados
-        // Após o primeiro acesso, usar o filtro de data para sincronização incremental
-        const lastSyncParam =
-          !isFirstAccess && lastSyncTime
-            ? `UpdatedAt=${encodeURIComponent(lastSyncTime.toLocaleDateString("en-US"))}`
-            : ""
-
-        console.log(
-          `Buscando templates ${isFirstAccess ? "completos" : "atualizados desde"}: ${lastSyncTime ? lastSyncTime.toLocaleDateString() : "início"}`,
-        )
-
-        try {
-          templates = await apiService.getChecklistTemplates(lastSyncParam)
-          console.log("Templates carregados:", templates.length)
-
-          if (templates.length > 0) {
-            console.log("Armazenando templates no storage local...")
-            for (const template of templates) {
-              await offlineStorage.saveItem("templates", sanitizeForStorage(template))
-            }
-          } else {
-            console.log("Nenhum template novo ou atualizado encontrado")
-          }
-        } catch (apiError) {
-          console.error("Erro na API ao buscar templates:", apiError)
-
-          // If we're in mock mode or the API is unavailable, try to load mock data
-          if (apiService.isUsingMockData() || (apiError instanceof Error && apiError.message.includes("404"))) {
-            console.log("Tentando carregar templates de exemplo...")
-            const { CHECKLIST_TEMPLATES } = await import("@/data/mock-templates")
-            templates = CHECKLIST_TEMPLATES || []
-
-            if (templates.length > 0) {
-              console.log("Armazenando templates de exemplo no storage local...")
-              for (const template of templates) {
-                await offlineStorage.saveItem("templates", sanitizeForStorage(template))
-              }
-            }
-          } else {
-            throw apiError // Re-throw if it's not a 404 or mock mode
-          }
-        }
-      } catch (templateError) {
-        console.error("Erro ao carregar templates:", templateError)
-        // Continuar com a sincronização mesmo se falhar ao carregar templates
-      }
-
-      // 2. Buscar veículos
-      let vehicles = []
-      try {
-        // Usar o mesmo timestamp da última sincronização
-        const lastSyncTime = this.getLastSyncTime()
-
-        // No primeiro acesso, não usar filtro de data para obter todos os dados
-        // Após o primeiro acesso, usar o filtro de data para sincronização incremental
-        const lastSyncParam =
-          !isFirstAccess && lastSyncTime
-            ? `UpdatedAt=${encodeURIComponent(lastSyncTime.toLocaleDateString("en-US"))}`
-            : ""
-
-        console.log(
-          `Buscando veículos ${isFirstAccess ? "completos" : "atualizados desde"}: ${lastSyncTime ? lastSyncTime.toLocaleDateString() : "início"}`,
-        )
-
-        try {
-          vehicles = await apiService.getVehicles(lastSyncParam)
-          console.log("Veículos carregados:", vehicles.length)
-
-          if (vehicles.length > 0) {
-            console.log("Armazenando veículos no storage local...")
-            for (const vehicle of vehicles) {
-              await offlineStorage.saveItem("vehicles", sanitizeForStorage(vehicle))
-            }
-          } else {
-            console.log("Nenhum veículo novo ou atualizado encontrado")
-          }
-        } catch (apiError) {
-          console.error("Erro na API ao buscar veículos:", apiError)
-
-          // If we're in mock mode or the API is unavailable, try to load mock data
-          if (apiService.isUsingMockData() || (apiError instanceof Error && apiError.message.includes("404"))) {
-            console.log("Tentando carregar veículos de exemplo...")
-            const { VEHICLES } = await import("@/data/mock-vehicles")
-            vehicles = VEHICLES || []
-
-            if (vehicles.length > 0) {
-              console.log("Armazenando veículos de exemplo no storage local...")
-              for (const vehicle of vehicles) {
-                await offlineStorage.saveItem("vehicles", sanitizeForStorage(vehicle))
-              }
-            }
-          } else {
-            throw apiError // Re-throw if it's not a 404 or mock mode
-          }
-        }
-      } catch (vehicleError) {
-        console.error("Erro ao carregar veículos:", vehicleError)
-        // Continuar com a sincronização mesmo se falhar ao carregar veículos
-      }
-
-      // 3. Buscar checklists pendentes
-      try {
-        const pendingChecklists = await apiService.getPendingChecklists()
-        console.log("Checklists pendentes carregados:", pendingChecklists.length)
-
-        if (pendingChecklists.length > 0) {
-          for (const checklist of pendingChecklists) {
-            await offlineStorage.saveItem("checklists", sanitizeForStorage(checklist))
-          }
-        }
-      } catch (checklistError) {
-        console.error("Erro ao carregar checklists pendentes:", checklistError)
-        // Continuar com a sincronização mesmo se falhar ao carregar checklists
-      }
-
-      // Atualizar timestamp da última sincronização
-      this.updateLastSyncTime()
-
-      this.dispatchEvent({
-        type: "complete",
-        message: "Sincronização inicial concluída com sucesso",
-        data: {
-          templatesCount: templates.length,
-          vehiclesCount: vehicles.length,
-        },
-      })
-
-      // Reset retry count on success
-      this.retryCount = 0
-
-      return true
-    } catch (error) {
-      console.error("Erro na sincronização inicial:", error)
-
-      // If we've reached max retries, try to use mock data
-      if (++this.retryCount >= this.maxRetries) {
-        console.log(`Máximo de ${this.maxRetries} tentativas atingido. Tentando usar dados de exemplo...`)
-        apiService.setMockMode(true)
-        return await this.loadMockData()
-      }
-
-      this.dispatchEvent({
-        type: "error",
-        message: `Erro na sincronização inicial: ${error}`,
-        data: { error },
-      })
-
-      // Schedule a retry with exponential backoff
-      const retryDelay = Math.min(1000 * Math.pow(2, this.retryCount), 30000) // Max 30 seconds
-      console.log(`Agendando nova tentativa em ${retryDelay / 1000} segundos...`)
-
-      setTimeout(() => {
-        if (navigator.onLine) {
-          console.log(`Tentativa ${this.retryCount + 1} de sincronização inicial...`)
-          this.performInitialSync()
-        }
-      }, retryDelay)
-
-      return false
-    }
-  }
-
-  // Atualizar o timestamp da última sincronização
-  private updateLastSyncTime() {
-    this.lastSyncTime = new Date()
-    localStorage.setItem("last_sync_time", this.lastSyncTime.toISOString())
-  }
-
-  // Método para lidar com o evento online
-  private handleOnline = () => {
-    console.log("Conexão restaurada, verificando sincronizações pendentes...")
-    // Tentar sincronizar imediatamente quando ficar online
-    this.checkAndSync()
-
-    // Configurar verificação periódica
-    this.startAutoSync()
-  }
-
-  // Método para lidar com o evento offline
-  private handleOffline = () => {
-    console.log("Conexão perdida, pausando sincronização...")
-    // Parar verificação automática quando offline
-    this.stopAutoSync()
-
-    // Limpar qualquer tentativa de retry
-    if (this.retryTimeout) {
-      clearTimeout(this.retryTimeout)
-      this.retryTimeout = null
-    }
-
-    // Limpar qualquer timeout de sincronização em andamento
-    if (this.syncTimeoutId) {
-      clearTimeout(this.syncTimeoutId)
-      this.syncTimeoutId = null
-    }
-
-    // Se estiver sincronizando, interromper
-    if (this.isSyncing) {
-      this.isSyncing = false
-      this.dispatchEvent({
-        type: "error",
-        message: "Sincronização interrompida devido à perda de conexão",
-      })
-    }
-  }
-
-  // Iniciar verificação automática de sincronização
-  private startAutoSync(intervalMs = 300000) {
-    // 5 minutos por padrão
-    this.stopAutoSync() // Garantir que não haja duplicatas
-
-    this.autoSyncInterval = setInterval(() => {
-      if (navigator.onLine) {
-        this.checkAndSync()
-      }
-    }, intervalMs)
-  }
-
-  // Parar verificação automática
-  private stopAutoSync() {
-    if (this.autoSyncInterval) {
-      clearInterval(this.autoSyncInterval)
-      this.autoSyncInterval = null
-    }
-  }
-
-  // Registra um listener para eventos de sincronização
-  addEventListener(callback: SyncEventCallback) {
-    this.listeners.push(callback)
-  }
-
-  // Remove um listener
-  removeEventListener(callback: SyncEventCallback) {
-    this.listeners = this.listeners.filter((listener) => listener !== callback)
-  }
-
-  // Dispara um evento para todos os listeners
-  private dispatchEvent(event: SyncEvent) {
+  dispatchEvent(event: any) {
     this.listeners.forEach((listener) => listener(event))
   }
 
-  // Verifica se há itens para sincronizar e inicia o processo
-  async checkAndSync(): Promise<boolean> {
+  getLastSyncTime(): Date | null {
+    const time = localStorage.getItem("last_sync_time")
+    return time ? new Date(time) : null
+  }
+
+  setLastSyncTime(time: Date) {
+    this.lastSyncTime = time
+    localStorage.setItem("last_sync_time", time.toISOString())
+  }
+
+  // Modificar o método performInitialSync para processar corretamente os checklists da API
+  // Modifique o método performInitialSync para suportar sincronização incremental com timestamp
+  // Modifique o método performInitialSync para garantir que o timestamp seja usado corretamente
+  async performInitialSync(useTimestamp = false): Promise<boolean> {
     if (this.isSyncing || !navigator.onLine) {
       return false
     }
 
     try {
       this.isSyncing = true
-      this.dispatchEvent({ type: "start", message: "Iniciando sincronização" })
 
-      const pendingSyncs = await offlineStorage.getPendingSyncs()
+      // Determinar se é uma sincronização inicial ou incremental
+      const lastSyncTime = this.getLastSyncTime()
+      const isInitialSync = !useTimestamp || !lastSyncTime
 
-      if (pendingSyncs.length === 0) {
-        this.dispatchEvent({ type: "complete", message: "Nada para sincronizar" })
+      if (isInitialSync) {
+        this.dispatchEvent({ type: "start", message: "Iniciando sincronização completa" })
+      } else {
+        this.dispatchEvent({ type: "start", message: "Iniciando sincronização incremental" })
+      }
+
+      // Verificar se já existe uma sincronização recente (menos de 5 minutos)
+      const now = new Date()
+
+      // Se não for a primeira sincronização e a última foi recente, pular
+      if (!isInitialSync && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5 * 60 * 1000) {
+        console.log("Sincronização recente detectada, pulando sincronização")
+        this.dispatchEvent({ type: "complete", message: "Sincronização já realizada recentemente" })
         this.isSyncing = false
         return true
       }
 
+      // Verificar se já existe uma requisição em andamento para getAllAppData
+      const appDataRequestInProgress = localStorage.getItem("app_data_request_in_progress")
+      if (appDataRequestInProgress) {
+        console.log("Requisição getAllAppData já em andamento, pulando sincronização duplicada")
+        this.dispatchEvent({ type: "complete", message: "Sincronização já em andamento" })
+        this.isSyncing = false
+        return true
+      }
+
+      // Marcar que uma requisição está em andamento
+      localStorage.setItem("app_data_request_in_progress", "true")
+
+      try {
+        // Obter o timestamp formatado para a API, se for sincronização incremental
+        const updatedAtParam = useTimestamp && lastSyncTime ? lastSyncTime.toISOString() : undefined
+
+        console.log(
+          `Iniciando sincronização ${isInitialSync ? "completa" : "incremental"} ${updatedAtParam ? `com timestamp: ${updatedAtParam}` : "sem timestamp"}`,
+        )
+
+        // Chamar a API com o timestamp, se disponível
+        const allData = await apiService.getAllAppData(undefined, updatedAtParam)
+
+        // Log para depuração da resposta da API
+        console.log("Resposta da API getAllAppData:", {
+          totalItems: allData.totalItems,
+          vehiclesCount: allData.vehicles?.length || 0,
+          modelsCount: allData.models?.length || 0,
+          checklistsCount: allData.checklists?.length || 0,
+        })
+
+        const totalItems =
+          (allData.vehicles?.length || 0) + (allData.models?.length || 0) + (allData.checklists?.length || 0)
+
+        this.dispatchEvent({
+          type: "progress",
+          message: `Sincronizando ${totalItems} item(s)`,
+          data: { total: totalItems, current: 0 },
+        })
+
+        // Processar veículos
+        if (allData.vehicles && Array.isArray(allData.vehicles)) {
+          for (let i = 0; i < allData.vehicles.length; i++) {
+            // Garantir que o veículo tenha um ID como string
+            const vehicle = {
+              ...allData.vehicles[i],
+              id: allData.vehicles[i].id?.toString() || `vehicle_${i}`,
+              fromApi: true, // Marcar como vindo da API
+            }
+            await offlineStorage.saveItem("vehicles", vehicle)
+            this.dispatchEvent({
+              type: "progress",
+              message: `Sincronizando veículo ${i + 1} de ${allData.vehicles.length}`,
+              data: { total: totalItems, current: i + 1 },
+            })
+          }
+        }
+
+        // Processar modelos de checklist
+        if (allData.models && Array.isArray(allData.models)) {
+          for (let i = 0; i < allData.models.length; i++) {
+            // Garantir que o modelo tenha um ID como string e campos necessários
+            const model = {
+              ...allData.models[i],
+              id: allData.models[i].id?.toString() || `model_${i}`,
+              title: allData.models[i].name || "Modelo sem nome",
+              description: allData.models[i].description || "Sem descrição",
+              fromApi: true, // Marcar como vindo da API
+            }
+            await offlineStorage.saveItem("templates", model)
+            this.dispatchEvent({
+              type: "progress",
+              message: `Sincronizando modelo ${i + 1} de ${allData.models.length}`,
+              data: { total: totalItems, current: allData.vehicles.length + i + 1 },
+            })
+          }
+        }
+
+        // Processar checklists
+        if (allData.checklists && Array.isArray(allData.checklists)) {
+          for (let i = 0; i < allData.checklists.length; i++) {
+            // Adaptar o formato do checklist para o formato esperado pelo aplicativo
+            const checklist = {
+              id: allData.checklists[i].id?.toString() || `checklist_${i}`,
+              title: allData.checklists[i].name || "Checklist sem título",
+              template: {
+                id: allData.checklists[i].model?.id?.toString() || "",
+                title: allData.checklists[i].model?.name || allData.checklists[i].name || "Modelo sem nome",
+                items: this.extractChecklistItems(allData.checklists[i]),
+                flowSize: allData.checklists[i].flowSize || 1, // Adicionar flowSize
+              },
+              vehicle: this.extractVehicleInfo(allData.checklists[i]),
+              responses: this.extractResponses(allData.checklists[i]),
+              submittedAt: allData.checklists[i].startDate || new Date().toISOString(),
+              synced: true, // Marcar como sincronizado, pois veio da API
+              userId: allData.checklists[i].user?.id || "unknown",
+              flowSize: allData.checklists[i].flowSize || 1, // Adicionar flowSize
+              flowStep: allData.checklists[i].flowStep || 1, // Adicionar flowStep
+              status: allData.checklists[i].status || { id: 1 }, // Adicionar status
+              fromApi: true, // Marcar como vindo da API
+            }
+
+            await offlineStorage.saveItem("checklists", checklist)
+            this.dispatchEvent({
+              type: "progress",
+              message: `Sincronizando checklist ${i + 1} de ${allData.checklists.length}`,
+              data: {
+                total: totalItems,
+                current: allData.vehicles.length + allData.models.length + i + 1,
+              },
+            })
+          }
+        }
+
+        // Atualizar o timestamp da última sincronização
+        this.setLastSyncTime(new Date())
+
+        // Registrar o tipo de sincronização realizada
+        localStorage.setItem("last_sync_type", isInitialSync ? "full" : "incremental")
+
+        this.dispatchEvent({
+          type: "complete",
+          message: isInitialSync ? "Sincronização completa concluída" : "Sincronização incremental concluída",
+        })
+
+        this.retryCount = 0
+        return true
+      } finally {
+        // Remover o flag de requisição em andamento
+        localStorage.removeItem("app_data_request_in_progress")
+      }
+    } catch (error) {
+      console.error("Erro durante a sincronização:", error)
+      this.dispatchEvent({ type: "error", message: `Erro na sincronização: ${error}` })
+      return false
+    } finally {
+      this.isSyncing = false
+    }
+  }
+
+  // Adicionar métodos auxiliares para extrair informações dos checklists da API
+  // Adicione os métodos extractChecklistItems, extractVehicleInfo e extractResponses como públicos
+  // para que possam ser usados no hook de autenticação
+
+  // Altere de private para public
+  public extractChecklistItems(apiChecklist: any): any[] {
+    // If the checklist has flowData with data items, extract from there
+    if (
+      apiChecklist.flowData &&
+      Array.isArray(apiChecklist.flowData) &&
+      apiChecklist.flowData.length > 0 &&
+      apiChecklist.flowData[0].data &&
+      Array.isArray(apiChecklist.flowData[0].data)
+    ) {
+      return apiChecklist.flowData[0].data.map((item: any) => ({
+        id: item.itemId?.toString() || "",
+        question: item.itemName || "Pergunta sem texto",
+        type: this.mapAnswerTypeToAppType(item.answerTypeId),
+        requiresPhoto: item.requiredImage || false,
+        requiredImage: item.requiredImage || false,
+        requiresAudio: item.requiredAudio || false,
+        requiredAudio: item.requiredAudio || false,
+        requiresObservation: item.requiredObservation || false,
+        requiredObservation: item.requiredObservation || false,
+        answerValues: this.getAnswerValuesFromItem(item),
+        fromApi: true, // Marcar como vindo da API
+      }))
+    }
+
+    // If there are items directly in the model
+    if (apiChecklist.model?.items && Array.isArray(apiChecklist.model.items)) {
+      return apiChecklist.model.items.map((item: any) => ({
+        id: item.id?.toString() || "",
+        question: item.name || "Pergunta sem texto",
+        type: this.mapAnswerTypeToAppType(item.answerTypeId),
+        requiresPhoto: item.requiredImage || false,
+        requiredImage: item.requiredImage || false,
+        requiresAudio: item.requiredAudio || false,
+        requiredAudio: item.requiredAudio || false,
+        requiresObservation: item.requiredObservation || false,
+        requiredObservation: item.requiredObservation || false,
+        answerValues: this.getAnswerValuesFromItem(item),
+        fromApi: true, // Marcar como vindo da API
+      }))
+    }
+
+    // If we don't have any of the above, return empty array
+    return []
+  }
+
+  // Altere de private para public
+  public extractVehicleInfo(apiChecklist: any): any {
+    // Extrair informações do veículo do checklist
+    if (
+      apiChecklist.vehicleData &&
+      Array.isArray(apiChecklist.vehicleData) &&
+      apiChecklist.vehicleData.length > 0 &&
+      apiChecklist.vehicleData[0].vehicle
+    ) {
+      const vehicleData = apiChecklist.vehicleData[0]
+      return {
+        id: vehicleData.vehicle.id?.toString() || "",
+        name: vehicleData.vehicle.name || "Veículo sem nome",
+        licensePlate: vehicleData.vehicle.plate || "Sem placa",
+      }
+    }
+
+    // Se não tiver informações do veículo, retornar objeto vazio
+    return {
+      id: "",
+      name: "Veículo não especificado",
+      licensePlate: "Sem placa",
+    }
+  }
+
+  // Altere de private para public
+  public extractResponses(apiChecklist: any): any {
+    // Extrair respostas do checklist
+    const responses: any = {}
+
+    if (
+      apiChecklist.flowData &&
+      Array.isArray(apiChecklist.flowData) &&
+      apiChecklist.flowData.length > 0 &&
+      apiChecklist.flowData[0].data &&
+      Array.isArray(apiChecklist.flowData[0].data)
+    ) {
+      // Inicializar estruturas para fotos e áudios
+      responses.photos = {}
+      responses.audios = {}
+
+      apiChecklist.flowData[0].data.forEach((item: any) => {
+        // Converter a resposta para o formato esperado pelo aplicativo
+        if (item.answer === "true") {
+          responses[item.itemId] = true
+        } else if (item.answer === "false") {
+          responses[item.itemId] = false
+        } else {
+          responses[item.itemId] = item.answer
+        }
+
+        // Se tiver observações, adicionar
+        if (item.observations) {
+          responses[`${item.itemId}-observation`] = item.observations
+        }
+
+        // Processar fotos
+        if (item.photos && Array.isArray(item.photos) && item.photos.length > 0) {
+          // Criar array para as fotos deste item se ainda não existir
+          if (!responses.photos[item.itemId]) {
+            responses.photos[item.itemId] = []
+          }
+
+          // Adicionar URLs de fotos (em um app real, estas seriam URLs para as imagens no servidor)
+          item.photos.forEach((photo: any) => {
+            if (photo.photoBase64) {
+              // Em um app real, você usaria a URL da imagem no servidor
+              // Aqui estamos simulando com um data URL
+              const dataUrl = `data:image/jpeg;base64,${photo.photoBase64}`
+              responses.photos[item.itemId].push(dataUrl)
+            }
+          })
+        }
+
+        // Processar áudios
+        if (item.audios && Array.isArray(item.audios) && item.audios.length > 0) {
+          // Criar array para os áudios deste item se ainda não existir
+          if (!responses.audios[item.itemId]) {
+            responses.audios[item.itemId] = []
+          }
+
+          // Adicionar URLs de áudios (em um app real, estas seriam URLs para os áudios no servidor)
+          item.audios.forEach((audio: any) => {
+            if (audio.audioBase64) {
+              // Em um app real, você usaria a URL do áudio no servidor
+              // Aqui estamos simulando com um data URL
+              const dataUrl = `data:audio/mp3;base64,${audio.audioBase64}`
+              responses.audios[item.itemId].push(dataUrl)
+            }
+          })
+        }
+      })
+    }
+
+    return responses
+  }
+
+  // Altere de private para public
+  public mapAnswerTypeToAppType(answerTypeId: any): string {
+    // Se o item tiver um tipo de resposta específico, usá-lo
+    if (answerTypeId) {
+      switch (answerTypeId) {
+        case 1:
+          return "boolean"
+        case 2:
+          return "condition"
+        case 3:
+          return "fuel"
+        case 4:
+          return "text"
+        case 5:
+          return "audio"
+        default:
+          return "text"
+      }
+    }
+
+    return "text" // Fallback para texto
+  }
+
+  // Add this new helper method for answer values
+  // Altere de private para public
+  public getAnswerValuesFromItem(item: any): string[] {
+    if (item.answer && item.answer.answerValues && Array.isArray(item.answer.answerValues)) {
+      return item.answer.answerValues
+    }
+
+    // Default values by answer type
+    switch (item.answerTypeId) {
+      case 1: // Sim/Não
+        return ["Sim", "Não"]
+      case 2: // Bom/Regular/Ruim
+        return ["Ótimo", "Bom", "Regular", "Ruim"]
+      case 3: // Litragem
+        return ["Cheio", "1/4", "1/2", "3/4", "Vazio"]
+      default:
+        return []
+    }
+  }
+
+  // Melhore o método performIncrementalSync para lidar melhor com erros durante a sincronização
+  async performIncrementalSync(): Promise<boolean> {
+    if (this.isSyncing || !navigator.onLine) {
+      return false
+    }
+
+    try {
+      this.isSyncing = true
+      this.dispatchEvent({ type: "start", message: "Iniciando sincronização incremental" })
+
+      const pendingSyncs = await offlineStorage.getPendingSyncs()
       this.dispatchEvent({
         type: "progress",
         message: `Sincronizando ${pendingSyncs.length} item(s)`,
         data: { total: pendingSyncs.length, current: 0 },
       })
 
-      // Usar um timeout para não bloquear a interface
-      this.syncTimeoutId = setTimeout(async () => {
+      let successCount = 0
+      let errorCount = 0
+
+      for (let i = 0; i < pendingSyncs.length; i++) {
+        const sync = pendingSyncs[i]
+
         try {
-          for (let i = 0; i < pendingSyncs.length; i++) {
-            // Verificar se ainda estamos online
-            if (!navigator.onLine) {
-              throw new Error("Conexão perdida durante a sincronização")
-            }
-
-            const sync = pendingSyncs[i]
-
-            // Processar o item com base no tipo e operação
-            await this.processSyncItem(sync)
-
-            // Marcar como sincronizado
-            await offlineStorage.markAsSynced(sync.id)
-
-            this.dispatchEvent({
-              type: "progress",
-              message: `Sincronizando item ${i + 1} de ${pendingSyncs.length}`,
-              data: { total: pendingSyncs.length, current: i + 1 },
-            })
+          // Verificar se este item já está sendo sincronizado
+          const syncKey = `${sync.type}_${sync.itemId}`
+          if (this.syncInProgress.has(syncKey)) {
+            console.log(`Item ${syncKey} já está sendo sincronizado, pulando...`)
+            continue
           }
 
-          // Atualizar timestamp da última sincronização
-          this.updateLastSyncTime()
+          // Marcar como em sincronização
+          this.syncInProgress.add(syncKey)
+
+          if (sync.type === "checklists") {
+            const checklist = await offlineStorage.getItem("checklists", sync.itemId)
+
+            if (!checklist) {
+              console.warn(`Checklist ${sync.itemId} não encontrado, marcando como sincronizado`)
+              await offlineStorage.markAsSynced(sync.id)
+              this.syncInProgress.delete(syncKey)
+              continue
+            }
+
+            if (sync.operation === "create" || sync.operation === "update") {
+              try {
+                console.log(`Sincronizando checklist ${sync.itemId}...`)
+                await apiService.submitChecklist(checklist)
+
+                // Atualizar o checklist como sincronizado
+                checklist.synced = true
+                await offlineStorage.saveItem("checklists", checklist)
+                successCount++
+              } catch (submitError) {
+                console.error(`Erro ao enviar checklist ${sync.itemId}:`, submitError)
+
+                // Verificar se o erro é relacionado a problemas de rede
+                const errorMessage = submitError instanceof Error ? submitError.message : String(submitError)
+                const isNetworkError =
+                  errorMessage.includes("Failed to fetch") ||
+                  errorMessage.includes("Network") ||
+                  errorMessage.includes("CORS") ||
+                  errorMessage.includes("timeout")
+
+                if (isNetworkError) {
+                  // Para erros de rede, não marcar como sincronizado para tentar novamente mais tarde
+                  throw submitError
+                } else {
+                  // Para outros erros, marcar como sincronizado para evitar tentativas repetidas
+                  console.warn(`Marcando checklist ${sync.itemId} como sincronizado apesar do erro`)
+                  checklist.synced = true
+                  await offlineStorage.saveItem("checklists", checklist)
+                  errorCount++
+                }
+              }
+            } else if (sync.operation === "delete") {
+              // Não há suporte para exclusão na API, então apenas removemos localmente
+              console.log("Exclusão de checklist não suportada na API, removendo localmente")
+            }
+          }
+
+          // Marcar como sincronizado
+          await offlineStorage.markAsSynced(sync.id)
+
+          // Remover da lista de sincronização em andamento
+          this.syncInProgress.delete(syncKey)
 
           this.dispatchEvent({
-            type: "complete",
-            message: `Sincronização concluída: ${pendingSyncs.length} item(s)`,
-            data: { total: pendingSyncs.length },
+            type: "progress",
+            message: `Sincronizado ${i + 1} de ${pendingSyncs.length}`,
+            data: { total: pendingSyncs.length, current: i + 1 },
           })
-
-          // Reset retry count on success
-          this.retryCount = 0
         } catch (error) {
-          console.error("Erro durante a sincronização:", error)
+          console.error(`Erro ao sincronizar item ${sync.itemId}:`, error)
           this.dispatchEvent({
             type: "error",
-            message: `Erro na sincronização: ${error}`,
-            data: { error },
+            message: `Erro ao sincronizar item ${sync.itemId}: ${error}`,
           })
 
-          // Configurar uma nova tentativa após um tempo com backoff exponencial
-          if (navigator.onLine) {
-            const retryDelay = Math.min(1000 * Math.pow(2, this.retryCount++), 30000) // Max 30 seconds
-            console.log(`Agendando nova tentativa em ${retryDelay / 1000} segundos...`)
+          // Remover da lista de sincronização em andamento mesmo em caso de erro
+          const syncKey = `${sync.type}_${sync.itemId}`
+          this.syncInProgress.delete(syncKey)
+          errorCount++
 
-            this.retryTimeout = setTimeout(() => {
-              console.log("Tentando sincronizar novamente após erro...")
-              this.checkAndSync()
-            }, retryDelay)
+          // Se houver um erro, incrementar o contador de tentativas e tentar novamente mais tarde
+          this.retryCount++
+          if (this.retryCount >= this.maxRetries) {
+            console.warn("Número máximo de tentativas atingido. Abortando sincronização.")
+            this.dispatchEvent({
+              type: "error",
+              message: "Número máximo de tentativas atingido. Abortando sincronização.",
+            })
+            break
           }
-        } finally {
-          this.isSyncing = false
-          this.syncTimeoutId = null
         }
-      }, 0)
+      }
 
+      this.setLastSyncTime(new Date())
+
+      // Mensagem de conclusão com detalhes sobre sucessos e erros
+      const completionMessage =
+        errorCount > 0
+          ? `Sincronização concluída: ${successCount} item(s) com sucesso, ${errorCount} com erro`
+          : "Sincronização incremental concluída"
+
+      this.dispatchEvent({ type: "complete", message: completionMessage })
+      this.retryCount = 0
       return true
     } catch (error) {
-      console.error("Erro ao iniciar sincronização:", error)
-
-      this.dispatchEvent({
-        type: "error",
-        message: `Erro na sincronização: ${error}`,
-        data: { error },
-      })
-
-      this.isSyncing = false
-
-      // Configurar uma nova tentativa após um tempo
-      if (navigator.onLine) {
-        const retryDelay = Math.min(1000 * Math.pow(2, this.retryCount++), 30000) // Max 30 seconds
-        console.log(`Agendando nova tentativa em ${retryDelay / 1000} segundos...`)
-
-        this.retryTimeout = setTimeout(() => {
-          console.log("Tentando sincronizar novamente após erro...")
-          this.checkAndSync()
-        }, retryDelay)
-      }
-
+      console.error("Erro durante a sincronização incremental:", error)
+      this.dispatchEvent({ type: "error", message: `Erro na sincronização incremental: ${error}` })
       return false
+    } finally {
+      this.isSyncing = false
+      // Limpar a lista de sincronização em andamento
+      this.syncInProgress.clear()
     }
   }
 
-  // Modifique o método processSyncItem para melhorar o tratamento de checklists
-
-  // Processar um item da fila de sincronização
-  private async processSyncItem(syncItem: any): Promise<void> {
-    const { type, itemId, operation } = syncItem
+  // Implementação do método checkAndSync
+  // Modifique o método checkAndSync para usar a lógica de timestamp
+  async checkAndSync(): Promise<boolean> {
+    // Se já estiver sincronizando ou estiver offline, não fazer nada
+    if (this.isSyncing || !navigator.onLine) {
+      return false
+    }
 
     try {
-      // Obter o item do armazenamento local
-      const item = await offlineStorage.getItem(type, itemId)
+      // Verificar se há sincronizações pendentes
+      const pendingSyncs = await offlineStorage.getPendingSyncs()
 
-      if (!item) {
-        console.warn(`Item ${itemId} não encontrado no armazenamento local`)
-        return
-      }
+      // Se houver sincronizações pendentes, fazer sincronização incremental
+      if (pendingSyncs.length > 0) {
+        return this.performIncrementalSync()
+      } else {
+        // Se não houver sincronizações pendentes, verificar se é necessário fazer sincronização
+        const lastSyncTime = this.getLastSyncTime()
+        const now = new Date()
+        const lastSyncType = localStorage.getItem("last_sync_type")
 
-      // Processar com base na operação
-      switch (operation) {
-        case "create":
-        case "update":
-          if (type === "checklists") {
-            console.log(`Processando sincronização de checklist ${itemId}...`)
+        // Verificar se já houve uma sincronização completa anteriormente
+        const hasCompletedFullSync = lastSyncType === "full"
 
-            try {
-              // Processar uploads de arquivos primeiro
-              const processedItem = await this.processFileUploads(item)
+        // Condições para sincronização completa:
+        // 1. Nunca sincronizou antes
+        // 2. A última sincronização foi há mais de 24 horas
+        // 3. Nunca fez uma sincronização completa
+        if (!lastSyncTime || now.getTime() - lastSyncTime.getTime() > 24 * 60 * 60 * 1000 || !hasCompletedFullSync) {
+          return this.performInitialSync(false) // Sincronização completa
+        }
+        // Condições para sincronização incremental:
+        // 1. Já fez uma sincronização completa
+        // 2. A última sincronização foi há mais de 15 minutos
+        else if (hasCompletedFullSync && now.getTime() - lastSyncTime.getTime() > 15 * 60 * 1000) {
+          return this.performInitialSync(true) // Sincronização incremental com timestamp
+        }
 
-              // Enviar checklist para a API
-              const result = await apiService.submitChecklist(processedItem)
-              console.log(`Checklist ${itemId} enviado com sucesso para a API:`, result)
-
-              // Atualizar o item local para marcar como sincronizado
-              item.synced = true
-              await offlineStorage.saveItem(type, item)
-              console.log(`Checklist ${itemId} marcado como sincronizado localmente`)
-            } catch (error) {
-              console.error(`Erro ao sincronizar checklist ${itemId}:`, error)
-              throw error // Propagar o erro para tratamento adequado
-            }
-          }
-          break
-
-        case "delete":
-          // Implementar lógica de exclusão se necessário
-          console.log(`Operação de exclusão para ${type} ${itemId} não implementada`)
-          break
-
-        default:
-          console.warn(`Operação desconhecida: ${operation}`)
+        // Se não precisar sincronizar, retornar true
+        return true
       }
     } catch (error) {
-      console.error(`Erro ao processar item de sincronização ${syncItem.id}:`, error)
-      throw error // Propagar o erro para tratamento adequado
+      console.error("Erro ao verificar sincronização:", error)
+      return false
     }
   }
 
-  // Processar uploads de arquivos (fotos e áudios)
-  private async processFileUploads(checklist: any): Promise<any> {
-    // Clonar o checklist para não modificar o original
-    const processedChecklist = { ...checklist }
-
-    // Processar fotos
-    if (processedChecklist.responses && processedChecklist.responses.photos) {
-      const processedPhotos: Record<string, string[]> = {}
-
-      for (const [key, photos] of Object.entries(processedChecklist.responses.photos)) {
-        processedPhotos[key] = []
-
-        for (const photoUrl of photos as string[]) {
-          // Verificar se é uma URL de blob local
-          if (photoUrl.startsWith("blob:")) {
-            try {
-              // Buscar o blob
-              const response = await fetch(photoUrl)
-              const blob = await response.blob()
-
-              // Fazer upload para o servidor
-              const serverUrl = await apiService.uploadFile(blob, "photo", {
-                checklistId: processedChecklist.id,
-                itemId: key,
-              })
-
-              // Substituir URL local pela URL do servidor
-              processedPhotos[key].push(serverUrl)
-            } catch (error) {
-              console.error(`Erro ao processar foto ${photoUrl}:`, error)
-              // Manter a URL original em caso de erro
-              processedPhotos[key].push(photoUrl)
-            }
-          } else {
-            // Já é uma URL do servidor ou outro formato, manter como está
-            processedPhotos[key].push(photoUrl)
-          }
-        }
-      }
-
-      processedChecklist.responses.photos = processedPhotos
-    }
-
-    // Processar áudios (lógica similar às fotos)
-    if (processedChecklist.responses && processedChecklist.responses.audios) {
-      const processedAudios: Record<string, string[]> = {}
-
-      for (const [key, audios] of Object.entries(processedChecklist.responses.audios)) {
-        processedAudios[key] = []
-
-        for (const audioUrl of audios as string[]) {
-          // Verificar se é uma URL de blob local
-          if (audioUrl.startsWith("blob:")) {
-            try {
-              // Buscar o blob
-              const response = await fetch(audioUrl)
-              const blob = await response.blob()
-
-              // Fazer upload para o servidor
-              const serverUrl = await apiService.uploadFile(blob, "audio", {
-                checklistId: processedChecklist.id,
-                itemId: key,
-              })
-
-              // Substituir URL local pela URL do servidor
-              processedAudios[key].push(serverUrl)
-            } catch (error) {
-              console.error(`Erro ao processar áudio ${audioUrl}:`, error)
-              // Manter a URL original em caso de erro
-              processedAudios[key].push(audioUrl)
-            }
-          } else {
-            // Já é uma URL do servidor ou outro formato, manter como está
-            processedAudios[key].push(audioUrl)
-          }
-        }
-      }
-
-      processedChecklist.responses.audios = processedAudios
-    }
-
-    return processedChecklist
-  }
-
-  // Modifique o método forceSyncNow para ser mais robusto
+  // Implementação do método forceSyncNow
+  // Modifique o método forceSyncNow para usar a lógica de timestamp
   async forceSyncNow(): Promise<boolean> {
-    if (!navigator.onLine) {
-      this.dispatchEvent({
-        type: "error",
-        message: "Não é possível sincronizar: dispositivo offline",
-      })
+    // Se já estiver sincronizando ou estiver offline, não fazer nada
+    if (this.isSyncing || !navigator.onLine) {
+      console.log("Não é possível sincronizar: já está sincronizando ou está offline")
       return false
     }
 
-    console.log("Forçando sincronização imediata...")
+    console.log("Método forceSyncNow chamado!")
 
-    // Verificar se já está sincronizando
-    if (this.isSyncing) {
-      console.log("Sincronização já em andamento, aguardando...")
-      // Aguardar a sincronização atual terminar antes de iniciar uma nova
-      return new Promise((resolve) => {
-        const checkInterval = setInterval(() => {
-          if (!this.isSyncing) {
-            clearInterval(checkInterval)
-            resolve(this.checkAndSync())
-          }
-        }, 500)
-      })
-    }
-
-    return this.checkAndSync()
-  }
-
-  // Força uma sincronização inicial completa (recarrega todos os dados)
-  async forceFullSync(): Promise<boolean> {
-    if (!navigator.onLine && !apiService.isUsingMockData()) {
-      this.dispatchEvent({
-        type: "error",
-        message: "Não é possível sincronizar: dispositivo offline",
-      })
-      return false
-    }
-
-    // Reset retry count before attempting full sync
-    this.retryCount = 0
-    return this.performInitialSync()
-  }
-
-  // Obter o timestamp da última sincronização
-  getLastSyncTime(): Date | null {
-    if (!this.lastSyncTime) {
-      const storedTime = localStorage.getItem("last_sync_time")
-      if (storedTime) {
-        this.lastSyncTime = new Date(storedTime)
+    try {
+      // Desativar explicitamente o modo mockado para garantir que estamos usando a API real
+      const apiServiceInstance = (window as any).apiService || apiService
+      if (apiServiceInstance) {
+        console.log("Desativando modo mockado")
+        apiServiceInstance.setMockMode(false)
       }
+
+      // Verificar se há sincronizações pendentes
+      const pendingSyncs = await offlineStorage.getPendingSyncs()
+      console.log(`Verificando sincronizações pendentes: ${pendingSyncs.length} encontradas`)
+
+      // Disparar evento de início de sincronização
+      this.dispatchEvent({
+        type: "start",
+        message:
+          pendingSyncs.length > 0
+            ? `Iniciando sincronização de ${pendingSyncs.length} item(s)`
+            : "Iniciando sincronização",
+      })
+
+      // Se houver sincronizações pendentes, fazer sincronização incremental
+      if (pendingSyncs.length > 0) {
+        console.log("Executando sincronização incremental para itens pendentes")
+        return this.performIncrementalSync()
+      } else {
+        // Verificar se já houve uma sincronização completa
+        const lastSyncType = localStorage.getItem("last_sync_type")
+        const hasCompletedFullSync = lastSyncType === "full"
+
+        // Obter o timestamp da última sincronização
+        const lastSyncTime = this.getLastSyncTime()
+
+        // Log para depuração
+        console.log("Forçando sincronização com timestamp:", lastSyncTime ? lastSyncTime.toISOString() : "nenhum")
+        console.log("Tipo da última sincronização:", lastSyncType || "nenhuma")
+
+        // Se já fez uma sincronização completa, fazer incremental com timestamp
+        if (hasCompletedFullSync) {
+          console.log("Executando sincronização incremental com timestamp")
+          // Garantir que o timestamp seja passado, mesmo que seja null
+          return this.performInitialSync(true) // Sincronização incremental
+        } else {
+          console.log("Executando sincronização completa (primeira vez)")
+          // Se nunca fez uma sincronização completa, fazer completa
+          return this.performInitialSync(false) // Sincronização completa
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao forçar sincronização:", error)
+      this.dispatchEvent({ type: "error", message: `Erro ao forçar sincronização: ${error}` })
+      return false
     }
-    return this.lastSyncTime
   }
 
-  // Método para limpar recursos quando o serviço não for mais necessário
-  destroy() {
-    this.stopAutoSync()
-
-    if (this.retryTimeout) {
-      clearTimeout(this.retryTimeout)
-      this.retryTimeout = null
+  // Implementação do método forceFullSync
+  // Modifique o método forceFullSync para registrar o tipo de sincronização
+  async forceFullSync(): Promise<boolean> {
+    // Verificar se já existe uma sincronização em andamento
+    const syncInProgress = localStorage.getItem("sync_in_progress")
+    if (syncInProgress) {
+      console.warn("Já existe uma sincronização em andamento. Aguardando conclusão...")
+      return false
     }
 
-    if (this.syncTimeoutId) {
-      clearTimeout(this.syncTimeoutId)
-      this.syncTimeoutId = null
+    // Forçar uma sincronização completa, independentemente do estado atual
+    if (this.isSyncing) {
+      console.warn("Já existe uma sincronização em andamento. Aguarde a conclusão.")
+      return false
     }
 
-    if (typeof window !== "undefined") {
-      window.removeEventListener("online", this.handleOnline)
-      window.removeEventListener("offline", this.handleOffline)
+    if (!navigator.onLine) {
+      console.warn("Dispositivo offline. Não é possível realizar sincronização completa.")
+      this.dispatchEvent({
+        type: "error",
+        message: "Dispositivo offline. Não é possível realizar sincronização completa.",
+      })
+      return false
     }
 
-    this.listeners = []
+    try {
+      // Marcar que uma sincronização está em andamento
+      localStorage.setItem("sync_in_progress", "true")
+
+      // Remover o timestamp da última sincronização para forçar uma sincronização completa
+      localStorage.removeItem("last_sync_time")
+      this.lastSyncTime = null
+
+      // Realizar sincronização completa
+      const result = await this.performInitialSync(false)
+
+      // Se a sincronização foi bem-sucedida, registrar como sincronização completa
+      if (result) {
+        localStorage.setItem("last_sync_type", "full")
+      }
+
+      // Remover o flag de sincronização em andamento
+      localStorage.removeItem("sync_in_progress")
+
+      return result
+    } catch (error) {
+      console.error("Erro ao forçar sincronização completa:", error)
+      this.dispatchEvent({ type: "error", message: `Erro ao forçar sincronização completa: ${error}` })
+
+      // Remover o flag de sincronização em andamento mesmo em caso de erro
+      localStorage.removeItem("sync_in_progress")
+
+      return false
+    }
   }
 }
 
-// Singleton para uso em toda a aplicação
 export const syncService = new SyncService()

@@ -6,24 +6,20 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { User, Lock, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/hooks/use-auth"
-import Link from "next/link"
-
-// Importar o componente Logo
-import { Logo } from "@/components/ui/logo"
 
 // Alterar a importação de CLIENT_ID
 import { CLIENT_ID } from "@/lib/constants"
 import { apiService } from "@/lib/api-service"
 
 export function LoginScreen() {
-  // Adicionar credenciais de teste pré-preenchidas para facilitar o login
-  const [username, setUsername] = useState("motorista_teste")
-  const [password, setPassword] = useState("Mototeste123!")
+  // Remover as credenciais de teste pré-preenchidas
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -80,14 +76,18 @@ export function LoginScreen() {
     }
   }
 
+  const handleForgotPassword = (e: React.MouseEvent) => {
+    e.preventDefault()
+    alert("Por favor, entre em contato com o seu gestor para redefinir sua senha.")
+  }
+
   return (
     <div className="container max-w-md mx-auto p-4 flex items-center justify-center min-h-screen">
       <Card className="w-full">
         <CardHeader className="space-y-1">
-          <div className="flex justify-center mb-4">
-            <Logo width={80} height={90} />
+          <div className="flex justify-center mb-6">
+            <img src="/logo-frota-certa.svg" alt="Frota Certa Logo" className="h-16" />
           </div>
-          <CardTitle className="text-2xl font-bold text-center">Checklist Veicular</CardTitle>
           <CardDescription className="text-center">Entre com suas credenciais para acessar o sistema</CardDescription>
         </CardHeader>
         <CardContent>
@@ -111,9 +111,13 @@ export function LoginScreen() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password">Senha</Label>
-                  <Link href="/forgot-password" className="text-xs text-blue-500 hover:text-blue-700">
+                  <button
+                    onClick={handleForgotPassword}
+                    className="text-xs text-blue-500 hover:text-blue-700"
+                    type="button"
+                  >
                     Esqueceu a senha?
-                  </Link>
+                  </button>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -185,14 +189,6 @@ export function LoginScreen() {
           </form>
         </CardContent>
         <CardFooter className="flex flex-col gap-2">
-          <div className="text-center w-full">
-            <p className="text-sm text-muted-foreground">
-              Não tem uma conta?{" "}
-              <Link href="/register" className="text-blue-500 hover:text-blue-700">
-                Registre-se
-              </Link>
-            </p>
-          </div>
           <p className="text-xs text-center text-muted-foreground mt-2">
             Ao entrar, você concorda com os termos de uso e política de privacidade.
           </p>

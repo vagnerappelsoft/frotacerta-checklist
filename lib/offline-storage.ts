@@ -13,6 +13,7 @@ export class OfflineStorage {
   private dbVersion: number
   private db: IDBDatabase | null = null
   private dbInitPromise: Promise<boolean> | null = null
+  private syncQueueCache: Map<string, boolean> = new Map() // Cache para evitar duplicação na fila de sincronização
 
   constructor(dbName = "vehicle_checklist_db", dbVersion = 1) {
     this.dbName = dbName
@@ -98,6 +99,8 @@ export class OfflineStorage {
             const syncStore = db.createObjectStore("sync_queue", { keyPath: "id", autoIncrement: true })
             syncStore.createIndex("status", "status", { unique: false })
             syncStore.createIndex("timestamp", "timestamp", { unique: false })
+            syncStore.createIndex("itemId", "itemId", { unique: false })
+            syncStore.createIndex("type_itemId", ["type", "itemId"], { unique: false })
           }
 
           console.log("Estrutura do banco de dados atualizada")
@@ -112,9 +115,8 @@ export class OfflineStorage {
     return this.dbInitPromise
   }
 
-  // Modifique o método saveItem para sempre adicionar à fila de sincronização quando o tipo for "checklists"
+  // Modifique o método saveItem para verificar a flag fromApi
 
-  // Salva um item no armazenamento local
   async saveItem<T extends StorableData>(type: DataType, item: T): Promise<boolean> {
     try {
       console.log(`Salvando item no store '${type}':`, item.id)
@@ -154,33 +156,108 @@ export class OfflineStorage {
           const store = transaction.objectStore(type)
           console.log(`Salvando item com ID: ${item.id}`)
 
-          // Criar uma cópia limpa do objeto para evitar problemas de serialização
-          const cleanItem = JSON.parse(JSON.stringify(item))
-          const request = store.put(cleanItem)
+          // Verificar se o item já existe e se é um checklist já sincronizado
+          if (type === "checklists") {
+            const getRequest = store.get(item.id)
 
-          request.onsuccess = () => {
-            console.log(`Item salvo com sucesso no store '${type}'`)
+            getRequest.onsuccess = () => {
+              const existingItem = getRequest.result
 
-            // Adicionar à fila de sincronização se for um checklist, independentemente do estado de conexão
-            // Isso garante que todos os checklists sejam sincronizados, mesmo quando online
-            if (type === "checklists") {
-              this.addToSyncQueue(type, item.id, "create")
-                .then(() => console.log("Checklist adicionado à fila de sincronização"))
-                .catch((err) => console.error("Erro ao adicionar à fila de sincronização:", err))
-            } else if (!navigator.onLine) {
-              // Para outros tipos de dados, adicionar à fila apenas se estiver offline
-              this.addToSyncQueue(type, item.id, "create")
-                .then(() => console.log("Item adicionado à fila de sincronização"))
-                .catch((err) => console.error("Erro ao adicionar à fila de sincronização:", err))
+              // Verificar se o item já está na fila de sincronização
+              const cacheKey = `${type}_${item.id}`
+              const isInSyncQueue = this.syncQueueCache.get(cacheKey)
+
+              // Verificar se o item veio da API (não deve ser sincronizado novamente)
+              const isFromApi = item.fromApi === true
+
+              // Log detalhado para depuração
+              console.log(
+                `Item ${item.id} - Já na fila: ${isInSyncQueue}, Da API: ${isFromApi}, Já sincronizado: ${existingItem?.synced}`,
+              )
+
+              // Se o item já existe e está marcado como sincronizado, e o novo item também está marcado como sincronizado,
+              // ou se o item veio da API, não adicione à fila de sincronização novamente
+              const shouldAddToSyncQueue = !(
+                (existingItem && existingItem.synced === true && item.synced === true) ||
+                isInSyncQueue ||
+                isFromApi
+              )
+
+              // Criar uma cópia limpa do objeto para evitar problemas de serialização
+              const cleanItem = JSON.parse(JSON.stringify(item))
+              const putRequest = store.put(cleanItem)
+
+              putRequest.onsuccess = () => {
+                console.log(`Item salvo com sucesso no store '${type}'`)
+
+                // Adicionar à fila de sincronização apenas se necessário
+                if (type === "checklists" && shouldAddToSyncQueue) {
+                  console.log(`Adicionando checklist ${item.id} à fila de sincronização`)
+                  this.addToSyncQueue(type, item.id, "create")
+                    .then(() => {
+                      console.log("Checklist adicionado à fila de sincronização")
+                      // Marcar como adicionado ao cache
+                      this.syncQueueCache.set(cacheKey, true)
+                    })
+                    .catch((err) => console.error("Erro ao adicionar à fila de sincronização:", err))
+                } else {
+                  console.log(`Checklist ${item.id} NÃO adicionado à fila de sincronização porque:`)
+                  if (isInSyncQueue) console.log("- Já está na fila de sincronização")
+                  if (isFromApi) console.log("- Veio da API")
+                  if (existingItem && existingItem.synced === true && item.synced === true)
+                    console.log("- Já está sincronizado")
+                }
+
+                resolve(true)
+              }
+
+              putRequest.onerror = (event) => {
+                const error = putRequest.error
+                console.error(`Erro ao salvar item no IndexedDB:`, error)
+                reject(new Error(`Erro ao salvar: ${error?.message || "Desconhecido"}`))
+              }
             }
 
-            resolve(true)
-          }
+            getRequest.onerror = (event) => {
+              console.error(`Erro ao verificar item existente:`, event)
+              reject(new Error(`Erro ao verificar item existente: ${getRequest.error?.message || "Desconhecido"}`))
+            }
+          } else {
+            // Para outros tipos de dados, verificar se veio da API
+            const isFromApi = item.fromApi === true
 
-          request.onerror = (event) => {
-            const error = request.error
-            console.error(`Erro ao salvar item no IndexedDB:`, error)
-            reject(new Error(`Erro ao salvar: ${error?.message || "Desconhecido"}`))
+            // Criar uma cópia limpa do objeto para evitar problemas de serialização
+            const cleanItem = JSON.parse(JSON.stringify(item))
+            const request = store.put(cleanItem)
+
+            request.onsuccess = () => {
+              console.log(`Item salvo com sucesso no store '${type}'`)
+
+              // Verificar se o item já está na fila de sincronização
+              const cacheKey = `${type}_${item.id}`
+              const isInSyncQueue = this.syncQueueCache.get(cacheKey)
+
+              // Para outros tipos de dados, adicionar à fila apenas se estiver offline e não for da API
+              if (!navigator.onLine && !isInSyncQueue && !isFromApi) {
+                this.addToSyncQueue(type, item.id, "create")
+                  .then(() => {
+                    console.log("Item adicionado à fila de sincronização")
+                    // Marcar como adicionado ao cache
+                    this.syncQueueCache.set(cacheKey, true)
+                  })
+                  .catch((err) => console.error("Erro ao adicionar à fila de sincronização:", err))
+              } else if (isFromApi) {
+                console.log(`Item ${item.id} não adicionado à fila porque veio da API`)
+              }
+
+              resolve(true)
+            }
+
+            request.onerror = (event) => {
+              const error = request.error
+              console.error(`Erro ao salvar item no IndexedDB:`, error)
+              reject(new Error(`Erro ao salvar: ${error?.message || "Desconhecido"}`))
+            }
           }
         } catch (error) {
           console.error(`Erro ao criar transação:`, error)
@@ -326,22 +403,47 @@ export class OfflineStorage {
         }
 
         try {
+          // Primeiro, verificar se já existe uma entrada para este item na fila
           const transaction = this.db.transaction(["sync_queue"], "readwrite")
           const store = transaction.objectStore("sync_queue")
-          const request = store.add({
-            type,
-            itemId,
-            operation,
-            status: "pending",
-            timestamp: new Date().toISOString(),
-          })
+          const index = store.index("type_itemId")
+          const request = index.getAll([type, itemId])
 
           request.onsuccess = () => {
-            resolve(true)
+            const existingEntries = request.result
+
+            // Se já existe uma entrada pendente para este item, não adicionar novamente
+            if (existingEntries && existingEntries.length > 0) {
+              const pendingEntries = existingEntries.filter((entry) => entry.status === "pending")
+              if (pendingEntries.length > 0) {
+                console.log(`Item ${type}/${itemId} já está na fila de sincronização, não adicionando novamente`)
+                resolve(true)
+                return
+              }
+            }
+
+            // Se não existe, adicionar à fila
+            const addRequest = store.add({
+              type,
+              itemId,
+              operation,
+              status: "pending",
+              timestamp: new Date().toISOString(),
+            })
+
+            addRequest.onsuccess = () => {
+              console.log(`Item ${type}/${itemId} adicionado à fila de sincronização`)
+              resolve(true)
+            }
+
+            addRequest.onerror = (event) => {
+              console.error(`Erro ao adicionar à fila de sincronização:`, event)
+              reject(false)
+            }
           }
 
           request.onerror = (event) => {
-            console.error(`Erro ao adicionar à fila de sincronização:`, event)
+            console.error(`Erro ao verificar fila de sincronização:`, event)
             reject(false)
           }
         } catch (error) {
@@ -420,6 +522,10 @@ export class OfflineStorage {
               const updateRequest = store.put(item)
 
               updateRequest.onsuccess = () => {
+                // Remover do cache de sincronização
+                const cacheKey = `${item.type}_${item.itemId}`
+                this.syncQueueCache.delete(cacheKey)
+
                 resolve(true)
               }
 
@@ -474,6 +580,8 @@ export class OfflineStorage {
               completedStores++
               if (completedStores === stores.length) {
                 console.log("Todos os dados foram limpos com sucesso")
+                // Limpar o cache de sincronização
+                this.syncQueueCache.clear()
                 resolve(true)
               }
             }

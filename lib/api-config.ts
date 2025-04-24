@@ -12,16 +12,18 @@ export const TEST_CREDENTIALS = {
   password: "Mototeste123!",
 }
 
+// Adicionar logs detalhados para depuração da construção de URLs da API
+
 // Função para construir URLs da API corretamente
 export function buildApiUrl(baseUrl: string, endpoint: string): string {
   // Remover barras extras no início do endpoint e no final da baseUrl
   const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint
 
-  return `${cleanBaseUrl}/${cleanEndpoint}`
+  const finalUrl = `${cleanBaseUrl}/${cleanEndpoint}`
+  console.log(`API URL construída: ${finalUrl}`)
+  return finalUrl
 }
-
-// Adicionar parâmetros padrão para as requisições à API
 
 // Adicione esta função para construir URLs com parâmetros de paginação e ordenação
 export function buildApiUrlWithParams(baseUrl: string, endpoint: string, params: Record<string, string> = {}): string {
@@ -45,7 +47,9 @@ export function buildApiUrlWithParams(baseUrl: string, endpoint: string, params:
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
     .join("&")
 
-  return `${cleanBaseUrl}/${cleanEndpoint}${queryString ? `?${queryString}` : ""}`
+  const finalUrl = `${cleanBaseUrl}/${cleanEndpoint}${queryString ? `?${queryString}` : ""}`
+  console.log(`API URL com parâmetros construída: ${finalUrl}`)
+  return finalUrl
 }
 
 // Atualizar os endpoints para usar a nova função
@@ -59,10 +63,14 @@ export const API_ENDPOINTS = {
 
   // Checklists
   checklistModels: (clientId: string) => `${clientId}/checklistmodel`, // Changed to lowercase 'm'
+  checklistModelDetails: (clientId: string, id: string | number) => `${clientId}/checklistmodel/details?Id=${id}`,
   checklists: (clientId: string) => `${clientId}/checklist`,
 
   // Veículos
   vehicles: (clientId: string) => `${clientId}/vehicle`,
+
+  // Sincronização de dados
+  syncDataApp: (clientId: string, userId: string | number) => `${clientId}/SyncDataApp/${userId}`,
 
   // Outros endpoints
   healthcheck: (clientId: string) => `${clientId}/healthcheck`,

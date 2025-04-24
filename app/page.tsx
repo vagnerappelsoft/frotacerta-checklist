@@ -17,11 +17,12 @@ import { offlineStorage } from "@/lib/offline-storage"
 import { ErrorFallback } from "@/components/error-fallback"
 import { InstallPWAPrompt } from "@/components/install-pwa-prompt"
 import { InstallAppScreen } from "@/components/install-app-screen"
-import { VEHICLES } from "@/data/mock-vehicles"
-import { CHECKLIST_TEMPLATES } from "@/data/mock-templates"
 import { ServiceWorkerUpdater } from "@/components/service-worker-updater"
 import { OfflineFallback } from "@/components/offline-fallback"
 import { useAuth } from "@/hooks/use-auth"
+import { apiService } from "@/lib/api-service"
+import { ApiResponseViewer } from "@/components/api-response-viewer"
+import { LoadingScreen } from "@/components/loading-screen"
 
 export default function DriverChecklistPage() {
   const [activeTab, setActiveTab] = useState<string>("apply-checklist")
@@ -63,6 +64,9 @@ export default function DriverChecklistPage() {
         // Solicitar ao Service Worker para cachear a página atual
         cacheCurrentPage()
 
+        // Desativar explicitamente o modo mockado
+        apiService.setMockMode(false)
+
         // Inicializar o armazenamento offline
         await offlineStorage.init()
 
@@ -80,28 +84,112 @@ export default function DriverChecklistPage() {
           const storedVehicles = await offlineStorage.getAllItems("vehicles")
           const storedChecklists = await offlineStorage.getAllItems("checklists")
 
-          // Se não houver dados armazenados, usar os dados de exemplo
-          setOfflineTemplates(storedTemplates.length > 0 ? storedTemplates : CHECKLIST_TEMPLATES)
-          setOfflineVehicles(storedVehicles.length > 0 ? storedVehicles : VEHICLES)
-          setOfflineChecklists(storedChecklists.length > 0 ? storedChecklists : [])
+          // Atualizar o estado com os dados armazenados localmente
+          setOfflineTemplates(storedTemplates)
+          setOfflineVehicles(storedVehicles)
+          setOfflineChecklists(storedChecklists)
+
+          console.log("Dados carregados do armazenamento local:", {
+            templates: storedTemplates.length,
+            vehicles: storedVehicles.length,
+            checklists: storedChecklists.length,
+          })
+
+          // Verificar se é o primeiro carregamento
+          const lastSyncTime = syncService.getLastSyncTime()
+          const lastSyncType = localStorage.getItem("last_sync_type")
+          const isFirstLoad = !lastSyncTime || !lastSyncType
 
           // Se não estiver online, entrar em modo offline imediatamente
           if (!isOnline) {
             setOfflineMode(true)
             console.log("Modo offline ativado durante inicialização")
           }
+          // Se estiver online e for o primeiro carregamento ou não tiver dados, forçar sincronização completa
+          else if (isFirstLoad || storedTemplates.length === 0 || storedVehicles.length === 0) {
+            console.log("Primeiro carregamento ou dados locais insuficientes, forçando sincronização completa...")
+
+            // Desativar explicitamente o modo mockado
+            apiService.setMockMode(false)
+
+            // Verificar se o usuário está logado
+            const userData = localStorage.getItem("user_data")
+            if (userData) {
+              // Forçar sincronização completa
+              const syncResult = await syncService.forceFullSync()
+
+              console.log("Resultado da sincronização forçada:", syncResult)
+
+              if (syncResult) {
+                // Recarregar dados após sincronização bem-sucedida
+                const syncedTemplates = await offlineStorage.getAllItems("templates")
+                const syncedVehicles = await offlineStorage.getAllItems("vehicles")
+                const syncedChecklists = await offlineStorage.getAllItems("checklists")
+
+                setOfflineTemplates(syncedTemplates)
+                setOfflineVehicles(syncedVehicles)
+                setOfflineChecklists(syncedChecklists)
+
+                console.log("Dados atualizados após sincronização:", {
+                  templates: syncedTemplates.length,
+                  vehicles: syncedVehicles.length,
+                  checklists: syncedChecklists.length,
+                })
+              }
+            }
+          }
+          // Se estiver online com dados suficientes, verificar se há atualizações incrementais
+          else if (isOnline) {
+            console.log("Verificando atualizações incrementais...")
+
+            // Verificar se há sincronizações pendentes
+            if (pendingSyncs.length > 0) {
+              console.log("Sincronizando checklists pendentes...", pendingSyncs.length)
+              await syncService.performIncrementalSync()
+            } else {
+              // Verificar se é necessário fazer sincronização incremental
+              await syncService.checkAndSync()
+            }
+
+            // Recarregar dados após sincronização
+            const updatedTemplates = await offlineStorage.getAllItems("templates")
+            const updatedVehicles = await offlineStorage.getAllItems("vehicles")
+            const updatedChecklists = await offlineStorage.getAllItems("checklists")
+
+            // Atualizar apenas se houver novos dados
+            if (updatedTemplates.length > storedTemplates.length) {
+              setOfflineTemplates(updatedTemplates)
+            }
+            if (updatedVehicles.length > storedVehicles.length) {
+              setOfflineVehicles(updatedVehicles)
+            }
+            if (updatedChecklists.length > storedChecklists.length) {
+              setOfflineChecklists(updatedChecklists)
+            }
+          }
         } catch (error) {
           console.error("Erro ao carregar dados offline:", error)
-          // Em caso de erro, usar os dados de exemplo
-          setOfflineTemplates(CHECKLIST_TEMPLATES)
-          setOfflineVehicles(VEHICLES)
-          setOfflineChecklists([])
           setOfflineMode(!isOnline)
-        }
 
-        // Tentar sincronizar se estiver online e tiver sincronizações pendentes
-        if (isOnline && pendingSyncs.length > 0) {
-          syncService.checkAndSync()
+          // Tentar sincronização forçada mesmo após erro, se estiver online
+          if (isOnline) {
+            try {
+              apiService.setMockMode(false)
+              await syncService.forceFullSync()
+
+              // Tentar recarregar dados após sincronização
+              const syncedTemplates = await offlineStorage.getAllItems("templates")
+              const syncedVehicles = await offlineStorage.getAllItems("vehicles")
+
+              if (syncedTemplates.length > 0) setOfflineTemplates(syncedTemplates)
+              if (syncedVehicles.length > 0) setOfflineVehicles(syncedVehicles)
+
+              console.log("Dados recarregados após recuperação de erro")
+            } catch (syncError) {
+              console.error("Erro na sincronização de recuperação:", syncError)
+              setGlobalError(syncError instanceof Error ? syncError : new Error("Erro na sincronização de recuperação"))
+            }
+          }
         }
 
         setIsInitialized(true)
@@ -129,6 +217,9 @@ export default function DriverChecklistPage() {
         console.log("Usuário detectado, verificando dados...")
 
         try {
+          // Desativar explicitamente o modo mockado
+          apiService.setMockMode(false)
+
           // Verificar se já temos dados carregados
           const storedTemplates = await offlineStorage.getAllItems("templates")
           const storedVehicles = await offlineStorage.getAllItems("vehicles")
@@ -143,14 +234,15 @@ export default function DriverChecklistPage() {
             const updatedVehicles = await offlineStorage.getAllItems("vehicles")
             const updatedChecklists = await offlineStorage.getAllItems("checklists")
 
-            setOfflineTemplates(updatedTemplates.length > 0 ? updatedTemplates : CHECKLIST_TEMPLATES)
-            setOfflineVehicles(updatedVehicles.length > 0 ? updatedVehicles : VEHICLES)
+            setOfflineTemplates(updatedTemplates)
+            setOfflineVehicles(updatedVehicles)
             setOfflineChecklists(updatedChecklists)
 
             console.log("Dados recarregados após sincronização forçada")
           }
         } catch (error) {
           console.error("Erro ao carregar dados do usuário:", error)
+          setGlobalError(error instanceof Error ? error : new Error("Erro ao carregar dados do usuário"))
         }
       }
 
@@ -158,14 +250,14 @@ export default function DriverChecklistPage() {
     }
   }, [user, isInitialized])
 
-  // Adicionar verificação de dados após o login
-
-  // Adicione este useEffect no componente DriverChecklistPage:
   // Verificar se os dados foram carregados após o login
   useEffect(() => {
     if (user && isInitialized && !isLoading) {
       const checkDataAfterLogin = async () => {
         try {
+          // Desativar explicitamente o modo mockado
+          apiService.setMockMode(false)
+
           // Verificar se já temos dados carregados
           const storedTemplates = await offlineStorage.getAllItems("templates")
           const storedVehicles = await offlineStorage.getAllItems("vehicles")
@@ -188,8 +280,8 @@ export default function DriverChecklistPage() {
             const updatedTemplates = await offlineStorage.getAllItems("templates")
             const updatedVehicles = await offlineStorage.getAllItems("vehicles")
 
-            setOfflineTemplates(updatedTemplates.length > 0 ? updatedTemplates : CHECKLIST_TEMPLATES)
-            setOfflineVehicles(updatedVehicles.length > 0 ? updatedVehicles : VEHICLES)
+            setOfflineTemplates(updatedTemplates)
+            setOfflineVehicles(updatedVehicles)
 
             console.log("Sincronização completa concluída, dados atualizados:", {
               templatesCount: updatedTemplates.length,
@@ -198,6 +290,7 @@ export default function DriverChecklistPage() {
           }
         } catch (error) {
           console.error("Erro ao verificar dados após login:", error)
+          setGlobalError(error instanceof Error ? error : new Error("Erro ao verificar dados após login"))
         }
       }
 
@@ -239,13 +332,62 @@ export default function DriverChecklistPage() {
 
       // Atualizar a lista de checklists
       setRefreshTrigger((prev) => prev + 1)
+    } else if (event.type === "error") {
+      console.error("Erro durante a sincronização:", event.message)
+      // Não definir um erro global aqui, apenas logar o erro
     }
   }
 
   // Forçar uma sincronização
   const handleForceSyncNow = () => {
+    console.log("handleForceSyncNow chamado na página principal!")
     if (isOnline) {
-      syncService.forceSyncNow()
+      // Desativar o modo mockado para garantir que estamos usando a API real
+      apiService.setMockMode(false)
+
+      // Chamar forceSyncNow diretamente
+      syncService
+        .forceSyncNow()
+        .then((result) => {
+          console.log("Resultado da sincronização forçada:", result)
+          // Atualizar a lista de checklists após a sincronização
+          if (result) {
+            setRefreshTrigger((prev) => prev + 1)
+
+            // Atualizar o contador de sincronizações pendentes
+            offlineStorage.getPendingSyncs().then((syncs) => {
+              setPendingSyncs(syncs.length)
+            })
+
+            // Recarregar dados após a sincronização
+            offlineStorage.getAllItems("templates").then((templates) => {
+              if (templates.length > 0) {
+                setOfflineTemplates(templates)
+                console.log("Templates atualizados após sincronização:", templates.length)
+              }
+            })
+
+            offlineStorage.getAllItems("vehicles").then((vehicles) => {
+              if (vehicles.length > 0) {
+                setOfflineVehicles(vehicles)
+                console.log("Veículos atualizados após sincronização:", vehicles.length)
+              }
+            })
+
+            offlineStorage.getAllItems("checklists").then((checklists) => {
+              if (checklists.length > 0) {
+                setOfflineChecklists(checklists)
+                console.log("Checklists atualizados após sincronização:", checklists.length)
+              }
+            })
+          }
+        })
+        .catch((error) => {
+          console.error("Erro ao forçar sincronização:", error)
+          setGlobalError(error instanceof Error ? error : new Error("Erro ao forçar sincronização"))
+        })
+    } else {
+      console.log("Não é possível sincronizar - dispositivo offline")
     }
   }
 
@@ -265,8 +407,7 @@ export default function DriverChecklistPage() {
     setTimeout(cacheCurrentPage, 500)
   }
 
-  // Modifique o método handleSubmitChecklist para garantir que a sincronização seja iniciada imediatamente quando online
-
+  // Atualizar o método handleSubmitChecklist para lidar com flowSize e flowStep
   const handleSubmitChecklist = async (data: any) => {
     try {
       // Limpar qualquer erro anterior
@@ -315,18 +456,75 @@ export default function DriverChecklistPage() {
       // Sanitizar os dados de resposta
       const sanitizedData = sanitizeForStorage(data)
 
+      // Gerar um ID único com timestamp e um valor aleatório para evitar colisões
+      const uniqueId = `checklist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+
+      // Verificar e processar fotos e áudios para garantir que são serializáveis
+      const processedPhotos: Record<string, string[]> = {}
+      if (sanitizedData.photos) {
+        for (const [key, photoArray] of Object.entries(sanitizedData.photos)) {
+          processedPhotos[key] = [...(photoArray as string[])]
+        }
+      }
+
+      const processedAudios: Record<string, string[]> = {}
+      if (sanitizedData.audios) {
+        for (const [key, audioArray] of Object.entries(sanitizedData.audios)) {
+          processedAudios[key] = [...(audioArray as string[])]
+        }
+      }
+
+      // Determinar flowSize e flowStep
+      const flowSize = sanitizedTemplate.flowSize || 1
+      const flowStep = 1 // Sempre começa com 1 para novos checklists
+
+      // Buscar informações de um checklist em continuação, se existir
+      const continuingChecklistData = localStorage.getItem("continuing_checklist")
+      let checklistId = uniqueId
+      let currentFlowStep = 1
+
+      if (continuingChecklistData) {
+        try {
+          const parsedData = JSON.parse(continuingChecklistData)
+          checklistId = parsedData.id
+          currentFlowStep = parsedData.flowStep || 1
+          console.log(`Continuando checklist existente: ${checklistId}, etapa ${currentFlowStep}`)
+
+          // Limpar os dados após uso
+          localStorage.removeItem("continuing_checklist")
+        } catch (error) {
+          console.error("Erro ao processar dados de checklist em continuação:", error)
+        }
+      }
+
+      // Determinar o status com base no flowSize e flowStep
+      // Se estamos na última etapa (ou além), marcar como concluído (status 1)
+      const isLastStep = currentFlowStep >= flowSize
+      const status = {
+        id: isLastStep ? 1 : 2, // Se for a última etapa, status é 1 (Concluído), senão é 2 (Em andamento)
+        name: isLastStep ? "Concluído" : "Em Andamento",
+      }
+
       // Criar o objeto de checklist completo com dados sanitizados
       const newChecklist = {
-        id: `checklist_${Date.now()}`, // Gerar um ID único
+        id: checklistId, // Usar o ID do checklist existente ou o novo ID gerado
         template: sanitizedTemplate,
         vehicle: sanitizedVehicle,
-        responses: sanitizedData,
+        responses: {
+          ...sanitizedData,
+          photos: processedPhotos,
+          audios: processedAudios,
+        },
         submittedAt: submittedAt,
         synced: false, // Sempre iniciar como não sincronizado para garantir que seja processado
         userId: user?.id || "unknown", // Adicionar ID do usuário
+        fromApi: false, // Marcar explicitamente como não vindo da API
+        flowSize: flowSize,
+        flowStep: currentFlowStep, // Usar a etapa atual (1 ou 2)
+        status: status, // Usar o status determinado acima
       }
 
-      console.log("Objeto de checklist sanitizado criado")
+      console.log("Objeto de checklist sanitizado criado com ID:", uniqueId)
 
       // Salvar localmente
       console.log("Salvando no armazenamento local...")
@@ -348,15 +546,18 @@ export default function DriverChecklistPage() {
       const pendingSyncs = await offlineStorage.getPendingSyncs()
       setPendingSyncs(pendingSyncs.length)
 
-      // Se estiver online, tentar sincronizar imediatamente
+      // Se estiver online, tentar sincronizar imediatamente, mas com um atraso para evitar problemas
       if (isOnline) {
         console.log("Usuário está online, iniciando sincronização imediata...")
         setTimeout(() => {
+          // Desativar o modo mockado
+          apiService.setMockMode(false)
+
           syncService
             .forceSyncNow()
             .then((result) => console.log("Resultado da sincronização imediata:", result))
             .catch((err) => console.error("Erro na sincronização imediata:", err))
-        }, 500) // Pequeno atraso para garantir que o IndexedDB tenha tempo de processar
+        }, 1500) // Atraso maior para garantir que o IndexedDB tenha tempo de processar
       }
 
       // Atualizar a lista de checklists
@@ -369,6 +570,37 @@ export default function DriverChecklistPage() {
     } catch (error) {
       console.error("Erro ao salvar checklist:", error)
       setGlobalError(error instanceof Error ? error : new Error("Erro desconhecido ao salvar checklist"))
+    }
+  }
+
+  const continueExistingChecklist = (checklist: any) => {
+    try {
+      // Limpar qualquer erro anterior
+      setGlobalError(null)
+
+      // Definir a segunda etapa do checklist
+      setActiveTab("apply-checklist")
+      setSelectedTemplate(checklist.template)
+      setSelectedVehicle(checklist.vehicle)
+      setStep("form")
+
+      // Armazenar o checklist existente para uso no formulário
+      localStorage.setItem(
+        "continuing_checklist",
+        JSON.stringify({
+          id: checklist.id,
+          flowStep: 2,
+          previousResponses: checklist.responses,
+        }),
+      )
+
+      // Cachear a página atual após a navegação
+      setTimeout(cacheCurrentPage, 500)
+
+      console.log("Continuando checklist:", checklist.id)
+    } catch (error) {
+      console.error("Erro ao continuar checklist:", error)
+      setGlobalError(error instanceof Error ? error : new Error("Erro ao continuar checklist"))
     }
   }
 
@@ -429,25 +661,23 @@ export default function DriverChecklistPage() {
   }
 
   // Função para voltar à lista de checklists
-  const handleBackToMyChecklists = () => {
-    setMyChecklistsScreen("list")
-    setSelectedMyChecklist(null)
+  const handleBackToMyChecklists = (checklist?: any, action?: string) => {
+    if (checklist && action === "continue") {
+      // Se a ação for continuar, vamos para a tela de formulário com o checklist selecionado
+      continueExistingChecklist(checklist)
+    } else {
+      // Comportamento padrão - voltar para a lista
+      setMyChecklistsScreen("list")
+      setSelectedMyChecklist(null)
 
-    // Cachear a página atual após a navegação
-    setTimeout(cacheCurrentPage, 500)
+      // Cachear a página atual após a navegação
+      setTimeout(cacheCurrentPage, 500)
+    }
   }
 
   // Mostrar indicador de carregamento enquanto inicializa
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <p className="text-orange-500 font-medium">Carregando...</p>
-          <p className="text-sm text-slate-500">Inicializando o aplicativo</p>
-        </div>
-      </div>
-    )
+    return <LoadingScreen />
   }
 
   if (globalError) {
@@ -555,6 +785,7 @@ export default function DriverChecklistPage() {
           )}
           {settingsScreen === "updates" && <UpdatesScreen onBack={handleBackToSettings} />}
           {settingsScreen === "install-app" && <InstallAppScreen onBack={handleBackToSettings} />}
+          {settingsScreen === "api-debug" && <ApiResponseViewer onBack={handleBackToSettings} />}
         </>
       )}
 
