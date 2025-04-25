@@ -672,7 +672,7 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
             {currentStep + 1} de {totalSteps}
           </span>
         </div>
-        <Progress value={progress} className="h-2" />
+        <Progress value={progress} className="h-2 bg-slate-200 [&>div]:bg-blue-500" />
       </div>
 
       <ScrollArea className="h-[calc(100vh-250px)]">

@@ -36,7 +36,7 @@ export function LoginScreen() {
     }
   }, [isAuthenticated, router])
 
-  // Modificar o handleLogin para usar o clientId informado
+  // Modificar o handleLogin para armazenar o clientId antes de fazer login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -56,6 +56,9 @@ export function LoginScreen() {
       if (!clientId.trim()) {
         throw new Error("ID do Cliente é obrigatório")
       }
+
+      // Armazenar o clientId no localStorage para uso pelo hook de autenticação
+      localStorage.setItem("login_client_id", clientId)
 
       // Configurar o clientId no serviço de API
       apiService.setClientId(clientId)
@@ -86,7 +89,7 @@ export function LoginScreen() {
       <Card className="w-full">
         <CardHeader className="space-y-1">
           <div className="flex justify-center mb-6">
-            <img src="/logo-frota-certa.svg" alt="Frota Certa Logo" className="h-16" />
+            <img src="/logo-frota-certa.svg" alt="Frota Certa Logo" className="h-20" />
           </div>
           <CardDescription className="text-center">Entre com suas credenciais para acessar o sistema</CardDescription>
         </CardHeader>

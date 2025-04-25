@@ -83,7 +83,9 @@ export function OfflineBanner({ pendingSyncs, onTrySync, className }: OfflineBan
           <>
             <RefreshCw className={`h-3 w-3 mr-1 ${syncingInProgress ? "animate-spin" : ""}`} />
             <span className="text-xs">
-              {pendingSyncs > 0 ? `Sincronizando ${pendingSyncs} item(s)...` : "Verificando dados..."}
+              {pendingSyncs > 0
+                ? `Sincronizando ${pendingSyncs} item(s)... Clique em "Tentar" para forçar a sincronização.`
+                : "Verificando dados..."}
             </span>
           </>
         )}

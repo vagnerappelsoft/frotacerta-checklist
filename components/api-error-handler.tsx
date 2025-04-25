@@ -27,8 +27,37 @@ export function ApiErrorHandler() {
       setError(customEvent.detail)
       setVisible(true)
 
+      // Verificar se o dispositivo está online
+      const isOnline = navigator.onLine
+
+      // Se for um erro relacionado ao client_id e estiver online, forçar logout e redirecionar para login
+      if (
+        isOnline &&
+        (customEvent.detail.message.includes("ID do Cliente") || customEvent.detail.message.includes("Client ID"))
+      ) {
+        // Forçar logout
+        logout()
+
+        // Limpar o client_id armazenado
+        localStorage.removeItem("client_id")
+
+        // Redirecionar para login após um breve atraso
+        setTimeout(() => {
+          router.push("/login")
+        }, 1500)
+      }
+      // Se estiver offline, apenas mostrar o erro sem redirecionar
+      else if (!isOnline && customEvent.detail.isAuthError) {
+        // Marcar para verificar o client_id quando voltar online
+        localStorage.setItem("check_client_id_on_reconnect", "true")
+
+        // Auto-hide após 5 segundos
+        setTimeout(() => {
+          setVisible(false)
+        }, 5000)
+      }
       // Auto-hide non-auth errors after 5 seconds
-      if (!customEvent.detail.isAuthError) {
+      else if (!customEvent.detail.isAuthError) {
         setTimeout(() => {
           setVisible(false)
         }, 5000)
@@ -40,7 +69,7 @@ export function ApiErrorHandler() {
     return () => {
       window.removeEventListener("api-error", handleApiError)
     }
-  }, [])
+  }, [logout, router])
 
   const handleClose = () => {
     setVisible(false)

@@ -80,6 +80,30 @@ export function useOnlineStatus() {
     }
   }, [])
 
+  // Adicionar um efeito para verificar o client_id quando a conexão for restaurada
+  useEffect(() => {
+    // Função para verificar o client_id quando a conexão for restaurada
+    const checkClientIdOnReconnect = () => {
+      if (isOnline && localStorage.getItem("check_client_id_on_reconnect") === "true") {
+        console.log("Conexão restaurada. Verificando client_id...")
+        localStorage.removeItem("check_client_id_on_reconnect")
+
+        // Verificar se temos um client_id válido
+        const clientId = localStorage.getItem("client_id")
+        if (!clientId || clientId.trim() === "" || clientId === "offline-client") {
+          console.warn("Client ID inválido após reconexão. Redirecionando para login.")
+          // Disparar evento de erro de API para redirecionar para login
+          // dispatchApiError("ID do Cliente inválido após reconexão. Por favor, faça login novamente.", 401, true)
+        }
+      }
+    }
+
+    // Verificar quando a conexão mudar de offline para online
+    if (hasConnectionChanged && isOnline) {
+      checkClientIdOnReconnect()
+    }
+  }, [isOnline, hasConnectionChanged])
+
   return {
     isOnline,
     hasConnectionChanged,

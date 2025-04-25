@@ -145,7 +145,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Verificar se temos um clientId armazenado
       const clientId = localStorage.getItem("client_id")
-      if (clientId) {
+
+      // Se não temos um clientId válido, usar o fornecido pelo usuário na tela de login
+      // Este valor deve ter sido definido no componente LoginScreen
+      if (!clientId || clientId.trim() === "") {
+        // Verificar se temos um clientId no localStorage (definido pela tela de login)
+        const loginClientId = localStorage.getItem("login_client_id")
+        if (loginClientId && loginClientId.trim() !== "") {
+          console.log(`Usando clientId da tela de login: ${loginClientId}`)
+          apiService.setClientId(loginClientId)
+        } else {
+          throw new Error("ID do Cliente não fornecido. Por favor, faça login novamente.")
+        }
+      } else {
         console.log(`Usando clientId armazenado: ${clientId}`)
         apiService.setClientId(clientId)
       }
@@ -312,6 +324,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log("Tentando renovar token...")
 
+      // Verificar se o dispositivo está online
+      const isOnline = typeof navigator !== "undefined" && navigator.onLine
+
+      // Se estiver offline, simular renovação bem-sucedida
+      if (!isOnline) {
+        console.log("Dispositivo offline. Simulando renovação de token bem-sucedida.")
+
+        // Estender a validade do token atual
+        const token = localStorage.getItem("auth_token")
+        if (token) {
+          // Configurar renovação do token atual
+          setupTokenRefresh(token)
+          return true
+        }
+        return false
+      }
+
       // Chamar o serviço de API para renovar o token
       const result = await apiService.refreshToken()
 
@@ -328,10 +357,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Erro ao renovar token:", error)
 
-      // Se o erro for de autenticação, fazer logout
-      if (error instanceof Error && error.message.includes("401")) {
+      // Se o erro for de autenticação e estiver online, fazer logout
+      if (error instanceof Error && error.message.includes("401") && navigator.onLine) {
         handleLogout()
         router.push("/login")
+        return false
+      }
+
+      // Se estiver offline, simular renovação bem-sucedida
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        console.log("Erro ao renovar token, mas dispositivo está offline. Continuando operação.")
+        return true
       }
 
       return false

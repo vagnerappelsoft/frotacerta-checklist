@@ -160,7 +160,7 @@ export class OfflineStorage {
           if (type === "checklists") {
             const getRequest = store.get(item.id)
 
-            getRequest.onsuccess = () => {
+            getRequest.onsuccess = async () => {
               const existingItem = getRequest.result
 
               // Verificar se o item já está na fila de sincronização
@@ -193,13 +193,25 @@ export class OfflineStorage {
                 // Adicionar à fila de sincronização apenas se necessário
                 if (type === "checklists" && shouldAddToSyncQueue) {
                   console.log(`Adicionando checklist ${item.id} à fila de sincronização`)
-                  this.addToSyncQueue(type, item.id, "create")
-                    .then(() => {
-                      console.log("Checklist adicionado à fila de sincronização")
-                      // Marcar como adicionado ao cache
-                      this.syncQueueCache.set(cacheKey, true)
-                    })
-                    .catch((err) => console.error("Erro ao adicionar à fila de sincronização:", err))
+
+                  // Verificar se o item já está na fila
+                  this.getPendingSyncs().then(async (syncs) => {
+                    const alreadyInQueue = syncs.some(
+                      (entry) => entry.type === type && entry.itemId === item.id && entry.status === "pending",
+                    )
+
+                    if (!alreadyInQueue) {
+                      this.addToSyncQueue(type, item.id, "create")
+                        .then(() => {
+                          console.log("Checklist adicionado à fila de sincronização")
+                          // Marcar como adicionado ao cache
+                          this.syncQueueCache.set(cacheKey, true)
+                        })
+                        .catch((err) => console.error("Erro ao adicionar à fila de sincronização:", err))
+                    } else {
+                      console.log(`Checklist ${item.id} já está na fila de sincronização, não adicionando novamente`)
+                    }
+                  })
                 } else {
                   console.log(`Checklist ${item.id} NÃO adicionado à fila de sincronização porque:`)
                   if (isInSyncQueue) console.log("- Já está na fila de sincronização")

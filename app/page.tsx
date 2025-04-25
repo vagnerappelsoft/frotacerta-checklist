@@ -516,6 +516,7 @@ export default function DriverChecklistPage() {
           audios: processedAudios,
         },
         submittedAt: submittedAt,
+        createdAt: new Date().toISOString(), // Adicionar campo createdAt explicitamente
         synced: false, // Sempre iniciar como não sincronizado para garantir que seja processado
         userId: user?.id || "unknown", // Adicionar ID do usuário
         fromApi: false, // Marcar explicitamente como não vindo da API
@@ -553,11 +554,27 @@ export default function DriverChecklistPage() {
           // Desativar o modo mockado
           apiService.setMockMode(false)
 
+          // Forçar sincronização imediata
           syncService
             .forceSyncNow()
-            .then((result) => console.log("Resultado da sincronização imediata:", result))
+            .then((result) => {
+              console.log("Resultado da sincronização imediata:", result)
+
+              // Se a sincronização foi bem-sucedida, atualizar a interface
+              if (result) {
+                // Recarregar a lista de checklists
+                offlineStorage.getAllItems("checklists").then((checklists) => {
+                  setOfflineChecklists(checklists)
+
+                  // Verificar sincronizações pendentes
+                  offlineStorage.getPendingSyncs().then((syncs) => {
+                    setPendingSyncs(syncs.length)
+                  })
+                })
+              }
+            })
             .catch((err) => console.error("Erro na sincronização imediata:", err))
-        }, 1500) // Atraso maior para garantir que o IndexedDB tenha tempo de processar
+        }, 2000) // Aumentar o atraso para 2 segundos
       }
 
       // Atualizar a lista de checklists

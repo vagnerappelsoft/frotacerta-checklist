@@ -14,6 +14,10 @@ export const TEST_CREDENTIALS = {
 
 // Adicionar logs detalhados para depuração da construção de URLs da API
 
+// Corrigir a função buildApiUrl para garantir que as URLs sejam construídas corretamente:
+
+// Substituir a função buildApiUrl:
+
 // Função para construir URLs da API corretamente
 export function buildApiUrl(baseUrl: string, endpoint: string): string {
   // Remover barras extras no início do endpoint e no final da baseUrl
@@ -52,19 +56,17 @@ export function buildApiUrlWithParams(baseUrl: string, endpoint: string, params:
   return finalUrl
 }
 
-// Atualizar os endpoints para usar a nova função
+// Atualizar os endpoints para garantir que estão corretos:
+
 export const API_ENDPOINTS = {
   // Autenticação
   login: (clientId: string) => `${clientId}/login`,
   refreshToken: (clientId: string) => `${clientId}/refresh-token`,
-  register: (clientId: string) => `${clientId}/register`,
-  requestPasswordReset: (clientId: string) => `${clientId}/request-password-reset`,
-  resetPassword: (clientId: string) => `${clientId}/reset-password`,
 
   // Checklists
-  checklistModels: (clientId: string) => `${clientId}/checklistmodel`, // Changed to lowercase 'm'
+  checklistModels: (clientId: string) => `${clientId}/checklistmodel`, // Corrigido para minúsculo
   checklistModelDetails: (clientId: string, id: string | number) => `${clientId}/checklistmodel/details?Id=${id}`,
-  checklists: (clientId: string) => `${clientId}/checklist`,
+  checklists: (clientId: string) => `${clientId}/checklist`, // Endpoint para enviar checklists
 
   // Veículos
   vehicles: (clientId: string) => `${clientId}/vehicle`,

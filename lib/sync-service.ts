@@ -467,12 +467,39 @@ class SyncService {
             if (sync.operation === "create" || sync.operation === "update") {
               try {
                 console.log(`Sincronizando checklist ${sync.itemId}...`)
-                await apiService.submitChecklist(checklist)
+
+                // Verificar se o checklist já está marcado como sincronizado
+                if (checklist.synced) {
+                  console.log(`Checklist ${sync.itemId} já está marcado como sincronizado, pulando...`)
+                  await offlineStorage.markAsSynced(sync.id)
+                  this.syncInProgress.delete(syncKey)
+                  continue
+                }
+
+                // Desativar explicitamente o modo mockado
+                if (typeof apiService.setMockMode === "function") {
+                  apiService.setMockMode(false)
+                }
+
+                // Adicionar logs detalhados antes de enviar
+                console.log(`Enviando checklist ${sync.itemId} para API:`, {
+                  templateId: checklist.template?.id,
+                  vehicleId: checklist.vehicle?.id,
+                  flowStep: checklist.flowStep || 1,
+                  hasResponses: !!checklist.responses,
+                  responseKeys: checklist.responses ? Object.keys(checklist.responses).length : 0,
+                })
+
+                const result = await apiService.submitChecklist(checklist)
+
+                console.log(`Resultado do envio do checklist ${sync.itemId}:`, result)
 
                 // Atualizar o checklist como sincronizado
                 checklist.synced = true
                 await offlineStorage.saveItem("checklists", checklist)
                 successCount++
+
+                console.log(`Checklist ${sync.itemId} marcado como sincronizado com sucesso`)
               } catch (submitError) {
                 console.error(`Erro ao enviar checklist ${sync.itemId}:`, submitError)
 
@@ -486,10 +513,12 @@ class SyncService {
 
                 if (isNetworkError) {
                   // Para erros de rede, não marcar como sincronizado para tentar novamente mais tarde
+                  console.log(`Erro de rede ao sincronizar checklist ${sync.itemId}, será tentado novamente mais tarde`)
+                  this.syncInProgress.delete(syncKey)
                   throw submitError
                 } else {
                   // Para outros erros, marcar como sincronizado para evitar tentativas repetidas
-                  console.warn(`Marcando checklist ${sync.itemId} como sincronizado apesar do erro`)
+                  console.warn(`Marcando checklist ${sync.itemId} como sincronizado apesar do erro: ${errorMessage}`)
                   checklist.synced = true
                   await offlineStorage.saveItem("checklists", checklist)
                   errorCount++
