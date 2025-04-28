@@ -15,8 +15,6 @@ import { useOnlineStatus } from "@/hooks/use-online-status"
 import { syncService } from "@/lib/sync-service"
 import { offlineStorage } from "@/lib/offline-storage"
 import { ErrorFallback } from "@/components/error-fallback"
-import { InstallPWAPrompt } from "@/components/install-pwa-prompt"
-import { InstallAppScreen } from "@/components/install-app-screen"
 import { ServiceWorkerUpdater } from "@/components/service-worker-updater"
 import { OfflineFallback } from "@/components/offline-fallback"
 import { useAuth } from "@/hooks/use-auth"
@@ -724,9 +722,6 @@ export default function DriverChecklistPage() {
       {/* Banner de status offline/online */}
       <OfflineBanner pendingSyncs={pendingSyncs} onTrySync={handleForceSyncNow} />
 
-      {/* Prompt de instalação do PWA */}
-      <InstallPWAPrompt />
-
       {/* Atualizador do Service Worker */}
       <ServiceWorkerUpdater />
 
@@ -801,7 +796,6 @@ export default function DriverChecklistPage() {
             />
           )}
           {settingsScreen === "updates" && <UpdatesScreen onBack={handleBackToSettings} />}
-          {settingsScreen === "install-app" && <InstallAppScreen onBack={handleBackToSettings} />}
           {settingsScreen === "api-debug" && <ApiResponseViewer onBack={handleBackToSettings} />}
         </>
       )}

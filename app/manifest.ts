@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",
-    theme_color: "#0b6fff", // Atualizado para a nova cor azul
+    theme_color: "#0b6fff", // Cor azul
     orientation: "portrait",
     scope: "/",
     id: "/",
@@ -29,6 +29,20 @@ export default function manifest(): MetadataRoute.Manifest {
         src: "/icon-512x512.png",
         sizes: "512x512",
         type: "image/png",
+      },
+    ],
+    screenshots: [
+      {
+        src: "/screenshot-desktop.png",
+        sizes: "1280x800",
+        type: "image/png",
+        form_factor: "wide",
+      },
+      {
+        src: "/screenshot-mobile.png",
+        sizes: "390x844",
+        type: "image/png",
+        form_factor: "narrow",
       },
     ],
   }
