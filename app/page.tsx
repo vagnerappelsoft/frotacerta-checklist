@@ -23,6 +23,8 @@ import { ApiResponseViewer } from "@/components/api-response-viewer"
 import { LoadingScreen } from "@/components/loading-screen"
 // Importe o serviço de histórico de quilometragem no topo do arquivo
 import { kilometerHistory } from "@/lib/kilometer-history"
+import { useRouter } from "next/navigation"
+import { STORAGE_KEYS } from "@/lib/constants"
 
 export default function DriverChecklistPage() {
   const [activeTab, setActiveTab] = useState<string>("apply-checklist")
@@ -44,6 +46,7 @@ export default function DriverChecklistPage() {
   const [pendingSyncs, setPendingSyncs] = useState<number>(0)
   const [isInitialized, setIsInitialized] = useState(false)
   const { user } = useAuth()
+  const router = useRouter()
 
   // Função para cachear a página atual
   const cacheCurrentPage = useCallback(() => {
@@ -66,6 +69,17 @@ export default function DriverChecklistPage() {
 
         // Desativar explicitamente o modo mockado
         apiService.setMockMode(false)
+
+        // Verificar se temos um client_id válido
+        const clientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID)
+        if (!clientId || clientId.trim() === "") {
+          console.warn("Client ID não encontrado. Redirecionando para login...")
+          router.push("/login")
+          return
+        }
+
+        // Configurar o client_id no serviço de API
+        apiService.setClientId(clientId)
 
         // Inicializar o armazenamento offline
         await offlineStorage.init()
@@ -97,7 +111,7 @@ export default function DriverChecklistPage() {
 
           // Verificar se é o primeiro carregamento
           const lastSyncTime = syncService.getLastSyncTime()
-          const lastSyncType = localStorage.getItem("last_sync_type")
+          const lastSyncType = localStorage.getItem(STORAGE_KEYS.SYNC_TYPE)
           const isFirstLoad = !lastSyncTime || !lastSyncType
 
           // Se não estiver online, entrar em modo offline imediatamente
@@ -113,7 +127,7 @@ export default function DriverChecklistPage() {
             apiService.setMockMode(false)
 
             // Verificar se o usuário está logado
-            const userData = localStorage.getItem("user_data")
+            const userData = localStorage.getItem(STORAGE_KEYS.USER_DATA)
             if (userData) {
               // Forçar sincronização completa
               const syncResult = await syncService.forceFullSync()
@@ -207,7 +221,7 @@ export default function DriverChecklistPage() {
     return () => {
       syncService.removeEventListener(handleSyncEvent)
     }
-  }, [isOnline, cacheCurrentPage])
+  }, [isOnline, cacheCurrentPage, router])
 
   // Adicionar um efeito para recarregar dados quando o usuário mudar
   useEffect(() => {

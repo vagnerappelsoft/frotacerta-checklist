@@ -28,6 +28,9 @@ class SyncService {
     this.listeners.forEach((listener) => listener(event))
   }
 
+  // Vamos verificar os métodos relacionados ao timestamp de sincronização
+
+  // Método getLastSyncTime() - Recupera o timestamp da última sincronização
   getLastSyncTime(): Date | null {
     // Verificar se estamos no navegador
     if (typeof window === "undefined") {
@@ -38,6 +41,7 @@ class SyncService {
     return time ? new Date(time) : null
   }
 
+  // Método setLastSyncTime() - Salva o timestamp da última sincronização
   setLastSyncTime(time: Date) {
     // Verificar se estamos no navegador
     if (typeof window === "undefined") {

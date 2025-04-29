@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { RefreshCw, Trash2, Database, Info, HelpCircle, Clock, LogOut } from "lucide-react"
+import { RefreshCw, Trash2, Database, HelpCircle, Clock, LogOut } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuth } from "@/hooks/use-auth"
 import { syncService } from "@/lib/sync-service"
@@ -192,12 +192,6 @@ export function SettingsScreen({
                   )}
                 </Button>
               </div>
-              <div className="pt-1">
-                <Button variant="outline" className="w-full text-red-600" onClick={handleClearData}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Limpar dados salvos
-                </Button>
-              </div>
             </CardContent>
           </Card>
 
@@ -229,17 +223,9 @@ export function SettingsScreen({
                   <span>Versão</span>
                   <span className="font-medium">1.0.0</span>
                 </p>
-                <p className="flex justify-between">
-                  <span>Última atualização</span>
-                  <span className="font-medium">28/04/2023</span>
-                </p>
               </div>
               <div className="pt-2">
                 <Button variant="outline" className="w-full justify-start">
-                  <Info className="mr-2 h-4 w-4" />
-                  Política de privacidade
-                </Button>
-                <Button variant="outline" className="w-full justify-start mt-1">
                   <HelpCircle className="mr-2 h-4 w-4" />
                   Ajuda e suporte
                 </Button>
@@ -261,6 +247,28 @@ export function SettingsScreen({
                     </>
                   )}
                 </Button>
+              </div>
+              <div className="pt-2 border-t mt-2">
+                <p className="text-sm font-medium text-gray-500 mb-2">Opções avançadas</p>
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-gray-600 hover:text-gray-800">
+                    Ferramentas de manutenção
+                  </summary>
+                  <div className="pt-2 pl-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                      onClick={handleClearData}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Limpar todos os dados salvos
+                    </Button>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Esta opção apaga todos os dados locais do aplicativo. Use apenas em caso de problemas.
+                    </p>
+                  </div>
+                </details>
               </div>
             </CardContent>
           </Card>

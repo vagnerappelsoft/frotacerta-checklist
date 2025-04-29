@@ -5,6 +5,7 @@ import { apiService } from "@/lib/api-service"
 import { syncService } from "@/lib/sync-service"
 import { useRouter } from "next/navigation"
 import { offlineStorage } from "@/lib/offline-storage"
+import { STORAGE_KEYS } from "@/lib/constants"
 
 // Definir o tipo para o usuário
 interface User {
@@ -89,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const token = localStorage.getItem("auth_token")
+        const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN)
 
         if (token) {
           // Verificar se o token está próximo de expirar
@@ -110,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           // Recuperar dados do usuário do localStorage
-          const userData = localStorage.getItem("user_data")
+          const userData = localStorage.getItem(STORAGE_KEYS.USER_DATA)
 
           if (userData) {
             setUser(JSON.parse(userData))
@@ -144,23 +145,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       // Verificar se temos um clientId armazenado
-      const clientId = localStorage.getItem("client_id")
+      const clientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID)
 
       // Se não temos um clientId válido, usar o fornecido pelo usuário na tela de login
       // Este valor deve ter sido definido no componente LoginScreen
       if (!clientId || clientId.trim() === "") {
-        // Verificar se temos um clientId no localStorage (definido pela tela de login)
-        const loginClientId = localStorage.getItem("login_client_id")
-        if (loginClientId && loginClientId.trim() !== "") {
-          console.log(`Usando clientId da tela de login: ${loginClientId}`)
-          apiService.setClientId(loginClientId)
-        } else {
-          throw new Error("ID do Cliente não fornecido. Por favor, faça login novamente.")
-        }
-      } else {
-        console.log(`Usando clientId armazenado: ${clientId}`)
-        apiService.setClientId(clientId)
+        throw new Error("ID do Cliente não fornecido. Por favor, faça login novamente.")
       }
+
+      console.log(`Usando clientId: ${clientId}`)
+      apiService.setClientId(clientId)
 
       // Desativar explicitamente o modo mockado
       apiService.setMockMode(false)
@@ -187,11 +181,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       console.log("Dados do usuário a serem armazenados:", userData)
-      localStorage.setItem("user_data", JSON.stringify(userData))
+      localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData))
       setUser(userData)
 
       // Verificar se é o primeiro login (não tem timestamp de última sincronização)
-      const isFirstLogin = !localStorage.getItem("last_sync_time")
+      const isFirstLogin = !localStorage.getItem(STORAGE_KEYS.LAST_SYNC)
 
       // Iniciar sincronização inicial após login
       setSuccess(
@@ -201,12 +195,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       )
 
       // Definir um flag para evitar sincronizações duplicadas
-      const syncInProgress = localStorage.getItem("sync_in_progress")
+      const syncInProgress = localStorage.getItem(STORAGE_KEYS.SYNC_IN_PROGRESS)
 
       if (!syncInProgress) {
         try {
           // Marcar que uma sincronização está em andamento
-          localStorage.setItem("sync_in_progress", "true")
+          localStorage.setItem(STORAGE_KEYS.SYNC_IN_PROGRESS, "true")
 
           console.log(`Iniciando sincronização ${isFirstLogin ? "completa" : "incremental"} após login...`)
 
@@ -277,19 +271,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           // Atualizar o timestamp da última sincronização
           const now = new Date()
-          localStorage.setItem("last_sync_time", now.toISOString())
-          localStorage.setItem("last_sync_type", "full")
+          localStorage.setItem(STORAGE_KEYS.LAST_SYNC, now.toISOString())
+          localStorage.setItem(STORAGE_KEYS.SYNC_TYPE, "full")
 
           console.log("Sincronização inicial concluída com sucesso")
           setSuccess("Sincronização concluída! Redirecionando...")
 
           // Remover o flag de sincronização em andamento
-          localStorage.removeItem("sync_in_progress")
+          localStorage.removeItem(STORAGE_KEYS.SYNC_IN_PROGRESS)
         } catch (syncError) {
           console.error("Erro na sincronização inicial:", syncError)
 
           // Remover o flag de sincronização em andamento mesmo em caso de erro
-          localStorage.removeItem("sync_in_progress")
+          localStorage.removeItem(STORAGE_KEYS.SYNC_IN_PROGRESS)
 
           // Verificar se é um erro de API ou conexão
           if (
@@ -337,7 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log("Dispositivo offline. Simulando renovação de token bem-sucedida.")
 
         // Estender a validade do token atual
-        const token = localStorage.getItem("auth_token")
+        const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN)
         if (token) {
           // Configurar renovação do token atual
           setupTokenRefresh(token)
@@ -382,8 +376,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Função de logout
   const handleLogout = () => {
     // Limpar token e dados do usuário
-    localStorage.removeItem("auth_token")
-    localStorage.removeItem("user_data")
+    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN)
+    localStorage.removeItem(STORAGE_KEYS.USER_DATA)
     setUser(null)
 
     // Limpar o temporizador de renovação

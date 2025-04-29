@@ -2,25 +2,33 @@
 import { dispatchApiError } from "@/components/api-error-handler"
 
 // Adicionar importações do arquivo de configuração
-import { API_BASE_URL, CLIENT_ID, API_ENDPOINTS, buildApiUrl } from "@/lib/api-config"
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from "@/lib/api-config"
+import { STORAGE_KEYS } from "@/lib/constants"
 
 // Serviço para comunicação com a API Frota Certa
 export class ApiService {
   private baseUrl: string
   private authToken: string | null = null
   private useMockData = false
-  private clientId = "frota-teste" // Cliente padrão, deve ser configurado
+  private clientId = "" // Initialize as empty string
 
   // Atualizar o construtor para usar as configurações
   constructor(baseUrl?: string, clientId?: string) {
     // Se não houver baseUrl, usar a configuração padrão
     this.baseUrl = baseUrl || API_BASE_URL
 
-    // Se o clientId for fornecido, usá-lo
-    if (clientId) {
+    // Priorizar clientId do localStorage se disponível
+    if (typeof window !== "undefined") {
+      const storedClientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID)
+      if (storedClientId && storedClientId.trim() !== "") {
+        this.clientId = storedClientId
+      } else if (clientId) {
+        // Se não houver no localStorage mas for fornecido como parâmetro
+        this.clientId = clientId
+      }
+    } else if (clientId) {
+      // Se não estiver no navegador mas for fornecido como parâmetro
       this.clientId = clientId
-    } else {
-      this.clientId = CLIENT_ID
     }
 
     console.log("ApiService inicializado com:", {
@@ -49,7 +57,7 @@ export class ApiService {
 
     // Salvar no localStorage apenas se for um valor válido
     if (typeof window !== "undefined" && clientId && clientId.trim() !== "") {
-      localStorage.setItem("client_id", clientId)
+      localStorage.setItem(STORAGE_KEYS.CLIENT_ID, clientId)
 
       // Disparar um evento para notificar outros componentes sobre a mudança
       window.dispatchEvent(new CustomEvent("client-id-changed", { detail: clientId }))
@@ -62,7 +70,7 @@ export class ApiService {
   getClientId(): string {
     // Primeiro, verificar no localStorage
     if (typeof window !== "undefined") {
-      const storedClientId = localStorage.getItem("client_id")
+      const storedClientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID)
 
       if (storedClientId && storedClientId.trim() !== "") {
         this.clientId = storedClientId
@@ -70,31 +78,14 @@ export class ApiService {
       }
     }
 
-    // Verificar se o dispositivo está online
-    const isOnline = typeof navigator !== "undefined" && navigator.onLine
-
-    // Se não encontrou no localStorage e estamos em produção E online, isso é um erro
-    if (process.env.NODE_ENV === "production" && isOnline) {
-      console.error("Client ID não encontrado e estamos em produção")
+    // Se não encontrou no localStorage e não temos um clientId definido, isso é um erro
+    if (!this.clientId || this.clientId.trim() === "") {
+      console.error("Client ID não encontrado")
       // Disparar um evento de erro de API para que o usuário seja redirecionado para login
       if (typeof window !== "undefined") {
         dispatchApiError("ID do Cliente não encontrado. Por favor, faça login novamente.", 401, true)
       }
       throw new Error("ID do Cliente não encontrado")
-    }
-
-    // Se estiver offline ou em desenvolvimento, usar um valor temporário
-    if (!this.clientId || this.clientId.trim() === "") {
-      if (isOnline) {
-        console.warn("Usando client ID temporário apenas para desenvolvimento")
-      } else {
-        console.warn("Dispositivo offline. Usando client ID temporário para operação offline.")
-        // Marcar que precisamos verificar o client_id quando voltar online
-        if (typeof window !== "undefined") {
-          localStorage.setItem("check_client_id_on_reconnect", "true")
-        }
-      }
-      this.clientId = "offline-client"
     }
 
     return this.clientId
@@ -1362,6 +1353,54 @@ export class ApiService {
     }
 
     console.log(`Total de fotos no checklist: ${totalPhotos}`)
+  }
+
+  // Add these methods to your apiService class
+
+  // Method to fetch only checklists
+  async getChecklists(params = {}): Promise<any[]> {
+    try {
+      const clientId = this.getClientId()
+      const userId = this.getUserIdFromStorage()
+
+      // Build a specific endpoint for just checklists
+      let endpoint = `${clientId}/checklist?userId=${userId}`
+
+      // Add any additional parameters
+      Object.entries(params).forEach(([key, value], index) => {
+        endpoint += `&${key}=${value}`
+      })
+
+      console.log("Fetching only checklists with endpoint:", endpoint)
+
+      const response = await this.fetchWithAuth(endpoint)
+      const responseData = await this.handleApiResponse(response, "Failed to fetch checklists")
+
+      // Process and return the data
+      const checklists = Array.isArray(responseData) ? responseData : responseData.checklists || responseData.data || []
+
+      console.log(`Retrieved ${checklists.length} checklists from API`)
+      return checklists
+    } catch (error) {
+      console.error("Error fetching checklists:", error)
+      throw error
+    }
+  }
+
+  // Already implemented but can be optimized
+  async getChecklistTemplates(additionalParams = ""): Promise<any[]> {
+    // Your existing implementation...
+  }
+
+  // Already implemented but can be optimized
+  async getVehicles(additionalParams = ""): Promise<any[]> {
+    // Your existing implementation...
+  }
+
+  private getUserIdFromStorage(): string | null {
+    const userData = localStorage.getItem("user_data")
+    const user = userData ? JSON.parse(userData) : null
+    return user?.userId || user?.id || user?.user_id || user?.driverId || null
   }
 }
 

@@ -3,7 +3,7 @@
 // URL base da API
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://api-checklist.frotacerta.com.br"
 
-// ID do cliente (tenant)
+// ID do Cliente padrão
 export const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID || "frota-teste"
 
 // Credenciais de teste
@@ -11,12 +11,6 @@ export const TEST_CREDENTIALS = {
   username: "motorista_teste",
   password: "Mototeste123!",
 }
-
-// Adicionar logs detalhados para depuração da construção de URLs da API
-
-// Corrigir a função buildApiUrl para garantir que as URLs sejam construídas corretamente:
-
-// Substituir a função buildApiUrl:
 
 // Função para construir URLs da API corretamente
 export function buildApiUrl(baseUrl: string, endpoint: string): string {
@@ -56,12 +50,14 @@ export function buildApiUrlWithParams(baseUrl: string, endpoint: string, params:
   return finalUrl
 }
 
-// Atualizar os endpoints para garantir que estão corretos:
-
+// Define API endpoints as functions that take clientId as a parameter
 export const API_ENDPOINTS = {
   // Autenticação
   login: (clientId: string) => `${clientId}/login`,
   refreshToken: (clientId: string) => `${clientId}/refresh-token`,
+  register: (clientId: string) => `${clientId}/register`,
+  requestPasswordReset: (clientId: string) => `${clientId}/request-password-reset`,
+  resetPassword: (clientId: string) => `${clientId}/reset-password`,
 
   // Checklists
   checklistModels: (clientId: string) => `${clientId}/checklistmodel`, // Corrigido para minúsculo
@@ -72,7 +68,8 @@ export const API_ENDPOINTS = {
   vehicles: (clientId: string) => `${clientId}/vehicle`,
 
   // Sincronização de dados
-  syncDataApp: (clientId: string, userId: string | number) => `${clientId}/SyncDataApp/${userId}`,
+  syncDataApp: (clientId: string, userId?: string | number) =>
+    `${clientId}/syncDataApp${userId ? `?userId=${userId}` : ""}`,
 
   // Outros endpoints
   healthcheck: (clientId: string) => `${clientId}/healthcheck`,

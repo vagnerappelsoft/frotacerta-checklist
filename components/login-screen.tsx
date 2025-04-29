@@ -12,8 +12,8 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/hooks/use-auth"
 
-// Alterar a importação de CLIENT_ID
-import { CLIENT_ID } from "@/lib/constants"
+// Remove the CLIENT_ID import
+// import { CLIENT_ID } from "@/lib/constants"
 import { apiService } from "@/lib/api-service"
 
 export function LoginScreen() {
@@ -26,8 +26,8 @@ export function LoginScreen() {
   const router = useRouter()
   const { login, isAuthenticated } = useAuth()
 
-  // Adicionar um novo estado para o CLIENT_ID
-  const [clientId, setClientId] = useState(CLIENT_ID || "frota-teste")
+  // Initialize clientId as empty string instead of using CLIENT_ID
+  const [clientId, setClientId] = useState("")
 
   // Verificar se o usuário já está autenticado
   useEffect(() => {
@@ -58,7 +58,7 @@ export function LoginScreen() {
       }
 
       // Armazenar o clientId no localStorage para uso pelo hook de autenticação
-      localStorage.setItem("login_client_id", clientId)
+      localStorage.setItem("client_id", clientId)
 
       // Configurar o clientId no serviço de API
       apiService.setClientId(clientId)
@@ -137,12 +137,12 @@ export function LoginScreen() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="clientId">ID do Cliente</Label>
+                <Label htmlFor="clientId">Código da Empresa</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="clientId"
-                    placeholder="ID do cliente (tenant)"
+                    placeholder="Código da Empresa"
                     className="pl-9"
                     value={clientId}
                     onChange={(e) => setClientId(e.target.value)}
