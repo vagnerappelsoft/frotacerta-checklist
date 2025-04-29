@@ -21,6 +21,8 @@ import { useAuth } from "@/hooks/use-auth"
 import { apiService } from "@/lib/api-service"
 import { ApiResponseViewer } from "@/components/api-response-viewer"
 import { LoadingScreen } from "@/components/loading-screen"
+// Importe o serviço de histórico de quilometragem no topo do arquivo
+import { kilometerHistory } from "@/lib/kilometer-history"
 
 export default function DriverChecklistPage() {
   const [activeTab, setActiveTab] = useState<string>("apply-checklist")
@@ -238,6 +240,27 @@ export default function DriverChecklistPage() {
 
             console.log("Dados recarregados após sincronização forçada")
           }
+          // Se estiver online, verificar integridade dos dados
+          else if (isOnline) {
+            console.log("Verificando integridade dos dados...")
+
+            // Buscar dados atualizados da API
+            const apiData = await apiService.getAllAppData()
+
+            // Verificar integridade dos dados
+            await syncService.verifyDataIntegrity(apiData)
+
+            // Recarregar dados após verificação de integridade
+            const updatedTemplates = await offlineStorage.getAllItems("templates")
+            const updatedVehicles = await offlineStorage.getAllItems("vehicles")
+            const updatedChecklists = await offlineStorage.getAllItems("checklists")
+
+            setOfflineTemplates(updatedTemplates)
+            setOfflineVehicles(updatedVehicles)
+            setOfflineChecklists(updatedChecklists)
+
+            console.log("Dados atualizados após verificação de integridade")
+          }
         } catch (error) {
           console.error("Erro ao carregar dados do usuário:", error)
           setGlobalError(error instanceof Error ? error : new Error("Erro ao carregar dados do usuário"))
@@ -246,7 +269,7 @@ export default function DriverChecklistPage() {
 
       loadUserData()
     }
-  }, [user, isInitialized])
+  }, [user, isInitialized, isOnline])
 
   // Verificar se os dados foram carregados após o login
   useEffect(() => {
@@ -307,6 +330,34 @@ export default function DriverChecklistPage() {
         // Se estiver online e não houver sincronizações pendentes, desativar o modo offline
         setOfflineMode(false)
         console.log("Modo offline desativado após mudança de conexão")
+
+        // Verificar integridade dos dados quando voltar a ficar online
+        const checkDataIntegrity = async () => {
+          try {
+            console.log("Verificando integridade dos dados após reconexão...")
+
+            // Buscar dados atualizados da API
+            const apiData = await apiService.getAllAppData()
+
+            // Verificar integridade dos dados
+            await syncService.verifyDataIntegrity(apiData)
+
+            // Recarregar dados após verificação de integridade
+            const updatedTemplates = await offlineStorage.getAllItems("templates")
+            const updatedVehicles = await offlineStorage.getAllItems("vehicles")
+            const updatedChecklists = await offlineStorage.getAllItems("checklists")
+
+            setOfflineTemplates(updatedTemplates)
+            setOfflineVehicles(updatedVehicles)
+            setOfflineChecklists(updatedChecklists)
+
+            console.log("Dados atualizados após verificação de integridade")
+          } catch (error) {
+            console.error("Erro ao verificar integridade dos dados:", error)
+          }
+        }
+
+        checkDataIntegrity()
       }
       // Se houver sincronizações pendentes, mantemos o modo offline até que sejam concluídas
     }
@@ -454,37 +505,17 @@ export default function DriverChecklistPage() {
       // Sanitizar os dados de resposta
       const sanitizedData = sanitizeForStorage(data)
 
-      // Gerar um ID único com timestamp e um valor aleatório para evitar colisões
-      const uniqueId = `checklist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
-
-      // Verificar e processar fotos e áudios para garantir que são serializáveis
-      const processedPhotos: Record<string, string[]> = {}
-      if (sanitizedData.photos) {
-        for (const [key, photoArray] of Object.entries(sanitizedData.photos)) {
-          processedPhotos[key] = [...(photoArray as string[])]
-        }
-      }
-
-      const processedAudios: Record<string, string[]> = {}
-      if (sanitizedData.audios) {
-        for (const [key, audioArray] of Object.entries(sanitizedData.audios)) {
-          processedAudios[key] = [...(audioArray as string[])]
-        }
-      }
-
-      // Determinar flowSize e flowStep
-      const flowSize = sanitizedTemplate.flowSize || 1
-      const flowStep = 1 // Sempre começa com 1 para novos checklists
-
-      // Buscar informações de um checklist em continuação, se existir
+      // Verificar se estamos continuando um checklist existente
       const continuingChecklistData = localStorage.getItem("continuing_checklist")
-      let checklistId = uniqueId
+      // Get checklistId from localStorage
+      const checklistId =
+        localStorage.getItem("checklistId") || `checklist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
       let currentFlowStep = 1
 
       if (continuingChecklistData) {
         try {
           const parsedData = JSON.parse(continuingChecklistData)
-          checklistId = parsedData.id
+          //checklistId = parsedData.id
           currentFlowStep = parsedData.flowStep || 1
           console.log(`Continuando checklist existente: ${checklistId}, etapa ${currentFlowStep}`)
 
@@ -495,8 +526,8 @@ export default function DriverChecklistPage() {
         }
       }
 
-      // Determinar o status com base no flowSize e flowStep
-      // Se estamos na última etapa (ou além), marcar como concluído (status 1)
+      // Determinar flowSize e flowStep
+      const flowSize = sanitizedTemplate.flowSize || 1
       const isLastStep = currentFlowStep >= flowSize
       const status = {
         id: isLastStep ? 1 : 2, // Se for a última etapa, status é 1 (Concluído), senão é 2 (Em andamento)
@@ -505,13 +536,14 @@ export default function DriverChecklistPage() {
 
       // Criar o objeto de checklist completo com dados sanitizados
       const newChecklist = {
+        // Pass checklistId to the newChecklist object
         id: checklistId, // Usar o ID do checklist existente ou o novo ID gerado
         template: sanitizedTemplate,
         vehicle: sanitizedVehicle,
         responses: {
           ...sanitizedData,
-          photos: processedPhotos,
-          audios: processedAudios,
+          photos: data.photos,
+          audios: data.audios,
         },
         submittedAt: submittedAt,
         createdAt: new Date().toISOString(), // Adicionar campo createdAt explicitamente
@@ -523,7 +555,7 @@ export default function DriverChecklistPage() {
         status: status, // Usar o status determinado acima
       }
 
-      console.log("Objeto de checklist sanitizado criado com ID:", uniqueId)
+      console.log("Objeto de checklist sanitizado criado com ID:", checklistId)
 
       // Salvar localmente
       console.log("Salvando no armazenamento local...")
@@ -582,6 +614,19 @@ export default function DriverChecklistPage() {
       setTimeout(cacheCurrentPage, 500)
 
       console.log("Checklist salvo com sucesso!")
+
+      // Salvar a quilometragem no histórico se disponível
+      if (data.vehicleKilometer && selectedVehicle?.id) {
+        const kmValue = Number(data.vehicleKilometer.replace(/\D/g, ""))
+        kilometerHistory.addKilometerRecord({
+          vehicleId: selectedVehicle.id,
+          kilometer: kmValue,
+          timestamp: submittedAt,
+          checklistId: checklistId,
+        })
+      }
+      // Clear localStorage after submission
+      localStorage.removeItem("checklistId")
     } catch (error) {
       console.error("Erro ao salvar checklist:", error)
       setGlobalError(error instanceof Error ? error : new Error("Erro desconhecido ao salvar checklist"))

@@ -25,6 +25,7 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
   const [pendingChecklists, setPendingChecklists] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const { isOnline } = useOnlineStatus()
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   // Função auxiliar para obter a data mais relevante de um checklist
   // Movida para o início do componente para evitar o erro "Cannot access before initialization"
@@ -123,7 +124,7 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
     }
 
     loadChecklists()
-  }, [offlineChecklists])
+  }, [offlineChecklists, refreshTrigger])
 
   // Filtrar e ordenar checklists concluídos com base na pesquisa
   const filteredCompleted = completedChecklists

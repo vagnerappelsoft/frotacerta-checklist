@@ -268,6 +268,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 await offlineStorage.saveItem("checklists", formattedChecklist)
               }
             }
+
+            // Verificar integridade dos dados após sincronização
+            if (navigator.onLine) {
+              await syncService.verifyDataIntegrity(allData)
+            }
           }
 
           // Atualizar o timestamp da última sincronização

@@ -1,6 +1,6 @@
 {
-  "name": "Checklist Veicular",
-  "short_name": "Checklist",
+  "name": "Frota Certa Checklist",
+  "short_name": "Frota Certa",
   "description": "Aplicativo de checklist veicular para motoristas",
   "start_url": "/",
   "display": "standalone",

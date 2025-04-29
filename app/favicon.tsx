@@ -24,6 +24,8 @@ export default function Icon() {
         alignItems: "center",
         justifyContent: "center",
         color: "#0B6FFF",
+        fontWeight: "bold",
+        borderRadius: "50%",
       }}
     >
       FC

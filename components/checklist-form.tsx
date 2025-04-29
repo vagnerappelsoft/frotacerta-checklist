@@ -29,6 +29,14 @@ import { CameraFallback } from "@/components/camera-fallback"
 import { ErrorFallback } from "@/components/error-fallback"
 import { LocationPermission } from "@/components/location-permission"
 import { LocationMapDialog } from "@/components/location-map-dialog"
+import { KilometerDialog } from "@/components/kilometer-dialog"
+
+// Importe o serviço de histórico de quilometragem no topo do arquivo
+import { kilometerHistory } from "@/lib/kilometer-history"
+// Importe o serviço de configurações de checklist
+import { checklistSettings } from "@/lib/checklist-settings"
+// Importe o hook de geolocalização
+import { useGeolocation } from "@/hooks/use-geolocation"
 
 // Importações existentes
 import {
@@ -49,6 +57,14 @@ interface ChecklistFormProps {
   onSubmit: (data: any) => void
   onCancel: () => void
   offlineMode?: boolean // Novo parâmetro para indicar modo offline
+}
+
+interface KilometerDialogProps {
+  onSubmit: (kilometer: string) => void
+  onCancel: () => void
+  initialValue?: string
+  vehicleId: string
+  checklistId: string // Add checklistId prop
 }
 
 // E passe-o para a função
@@ -72,6 +88,32 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
     address: string | null
   } | null>(null)
   const [showLocationMapDialog, setShowLocationMapDialog] = useState(false)
+  const [showKilometerDialog, setShowKilometerDialog] = useState(false)
+  const [vehicleKilometer, setVehicleKilometer] = useState<string>("")
+  const [isLocationRequired, setIsLocationRequired] = useState<boolean>(true)
+  const [isKilometerRequired, setIsKilometerRequired] = useState<boolean>(true)
+  const [checklistId, setChecklistId] = useState<string>(() => {
+    const continuingChecklistData = localStorage.getItem("continuing_checklist")
+    if (continuingChecklistData) {
+      try {
+        const parsedData = JSON.parse(continuingChecklistData)
+        return parsedData.id || `checklist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+      } catch (error) {
+        console.error("Erro ao processar dados de checklist em continuação:", error)
+        return `checklist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+      }
+    }
+    return `checklist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  })
+
+  useEffect(() => {
+    if (checklistId) {
+      localStorage.setItem("checklistId", checklistId)
+    }
+  }, [checklistId])
+
+  // Use o hook de geolocalização para obter a localização atual
+  const geolocation = useGeolocation()
 
   const totalSteps = checklist.items.length
   const progress = Math.round((currentStep / totalSteps) * 100)
@@ -81,6 +123,13 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
   const requiresPhoto = currentItem.requiresPhoto || currentItem.requiredImage || currentItem.type === "image" || false
   const requiresAudio = currentItem.requiresAudio || currentItem.requiredAudio || false
   const requiresObservation = currentItem.requiredObservation || currentItem.requiredObservation || false
+
+  // Carregar configurações de checklist
+  useEffect(() => {
+    const settings = checklistSettings.getSettings()
+    setIsLocationRequired(settings.requiredLocations)
+    setIsKilometerRequired(settings.requiredKilometer)
+  }, [])
 
   const handleNext = () => {
     // Limpar qualquer erro de submissão anterior
@@ -144,6 +193,15 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
       newErrors[`${currentItem.id}-observation`] = "É necessário adicionar uma observação"
     }
 
+    // Validate text responses if required
+    if (
+      currentItem.type === "text" &&
+      currentItem.required &&
+      (!responses[currentItem.id] || responses[currentItem.id].trim() === "")
+    ) {
+      newErrors[currentItem.id] = "Por favor, forneça uma resposta para esta pergunta"
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
@@ -153,8 +211,17 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
       setCurrentStep(currentStep + 1)
       setErrors({})
     } else {
-      // If we're on the last step, show the location dialog
-      setShowLocationDialog(true)
+      // Fluxo de finalização do checklist
+      if (isKilometerRequired) {
+        // Se a quilometragem é obrigatória, mostrar o diálogo de quilometragem
+        setShowKilometerDialog(true)
+      } else if (isLocationRequired) {
+        // Se a localização é obrigatória, mostrar o diálogo de localização
+        setShowLocationDialog(true)
+      } else {
+        // Se nenhum dos dois é obrigatório, finalizar o checklist
+        finalizeSubmission(null)
+      }
     }
   }
 
@@ -190,6 +257,10 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
 
   const handleTextResponse = (value: string) => {
     setResponses({ ...responses, [currentItem.id]: value })
+    // Clear any errors when the user types
+    if (value.trim() !== "" && errors[currentItem.id]) {
+      setErrors({ ...errors, [currentItem.id]: undefined })
+    }
   }
 
   const handleObservationResponse = (value: string) => {
@@ -566,6 +637,49 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
     }
   }, [])
 
+  // Função para obter a localização atual do usuário
+  const getCurrentLocation = async (): Promise<{
+    latitude: number | null
+    longitude: number | null
+    accuracy: number | null
+    timestamp: number | null
+    address: string | null
+  } | null> => {
+    try {
+      // Iniciar a obtenção da localização
+      geolocation.getCurrentPosition()
+
+      // Aguardar até que a localização seja obtida ou ocorra um erro
+      // Timeout de 10 segundos
+      const startTime = Date.now()
+      while (Date.now() - startTime < 10000) {
+        if (geolocation.latitude && geolocation.longitude) {
+          return {
+            latitude: geolocation.latitude,
+            longitude: geolocation.longitude,
+            accuracy: geolocation.accuracy,
+            timestamp: geolocation.timestamp,
+            address: geolocation.address,
+          }
+        }
+
+        if (geolocation.error) {
+          console.error("Erro ao obter localização:", geolocation.error)
+          return null
+        }
+
+        // Aguardar um pouco antes de verificar novamente
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+
+      console.error("Timeout ao obter localização")
+      return null
+    } catch (error) {
+      console.error("Erro ao obter localização:", error)
+      return null
+    }
+  }
+
   const handleLocationCaptured = (location: any) => {
     setLocationData(location)
     setShowLocationDialog(false)
@@ -579,6 +693,37 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
 
     // Proceed with submission without location data
     finalizeSubmission(null)
+  }
+
+  // Dentro do componente ChecklistForm, atualize a função handleKilometerSubmit
+  const handleKilometerSubmit = (kilometer: string) => {
+    // Salvar a quilometragem nas respostas
+    setResponses((prev) => ({
+      ...prev,
+      vehicleKilometer: kilometer,
+    }))
+
+    // Adicionar ao histórico de quilometragem
+    if (checklist.vehicle?.id) {
+      kilometerHistory.addKilometerRecord({
+        vehicleId: checklist.vehicle.id,
+        kilometer: Number(kilometer.replace(/\D/g, "")),
+        timestamp: new Date().toISOString(),
+        checklistId: checklistId,
+      })
+    }
+
+    // Verificar se a localização é obrigatória
+    if (isLocationRequired) {
+      // Se a localização é obrigatória, mostrar o diálogo de localização
+      setShowLocationDialog(true)
+    } else {
+      // Se a localização não é obrigatória, tentar obter a localização em segundo plano
+      getCurrentLocation().then((location) => {
+        // Finalizar a submissão com a localização obtida (ou null se falhou)
+        finalizeSubmission(location)
+      })
+    }
   }
 
   const finalizeSubmission = (location: any) => {
@@ -605,6 +750,15 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
           timestamp: location.timestamp,
           address: location.address || null,
         }
+      } else if (isLocationRequired) {
+        // Se a localização é obrigatória mas não foi obtida, criar uma localização padrão
+        serializableLocation = {
+          latitude: 0,
+          longitude: 0,
+          accuracy: 0,
+          timestamp: Date.now(),
+          address: "Unknown",
+        }
       }
 
       // Buscar informações de um checklist em continuação, se existir
@@ -626,10 +780,14 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
         photos: serializablePhotos,
         audios: serializableAudios,
         location: serializableLocation,
+        vehicleKilometer: responses.vehicleKilometer || vehicleKilometer, // Adicionar a quilometragem do veículo
       }
 
       // Chamar a função de submissão
-      onSubmit(finalData)
+      onSubmit({
+        ...finalData,
+        id: checklistId,
+      })
     } catch (error) {
       console.error("Erro ao submeter checklist:", error)
       setSubmissionError(error instanceof Error ? error : new Error("Erro desconhecido ao submeter checklist"))
@@ -641,6 +799,19 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
       <ErrorFallback error={submissionError} resetErrorBoundary={() => setSubmissionError(null)} onCancel={onCancel} />
     )
   }
+
+  useEffect(() => {
+    if (currentItem) {
+      console.log("Current item details:", {
+        id: currentItem.id,
+        question: currentItem.question,
+        type: currentItem.type,
+        answerTypeId: currentItem.answerTypeId,
+        answerValues: currentItem.answerValues,
+        options: currentItem.options,
+      })
+    }
+  }, [currentItem])
 
   return (
     <div className="container max-w-md mx-auto p-4">
@@ -763,12 +934,21 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
             )}
 
             {currentItem.type === "text" && (
-              <Textarea
-                placeholder="Digite suas observações aqui..."
-                className="min-h-[120px]"
-                value={responses[currentItem.id] || ""}
-                onChange={(e) => handleTextResponse(e.target.value)}
-              />
+              <div className="space-y-4">
+                <Textarea
+                  placeholder="Digite sua resposta aqui..."
+                  className="min-h-[120px]"
+                  value={responses[currentItem.id] || ""}
+                  onChange={(e) => handleTextResponse(e.target.value)}
+                />
+                {errors[currentItem.id] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[currentItem.id]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
             )}
 
             {currentItem.type === "number" && (
@@ -796,7 +976,11 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
                     <SelectValue placeholder="Selecione uma opção" />
                   </SelectTrigger>
                   <SelectContent>
-                    {currentItem.options?.map((option: string) => (
+                    {/* Use answerValues from the item if available */}
+                    {(currentItem.answerValues && Array.isArray(currentItem.answerValues)
+                      ? currentItem.answerValues
+                      : currentItem.options || ["OK", "Não OK"]
+                    ).map((option: string) => (
                       <SelectItem key={option} value={option}>
                         {option}
                       </SelectItem>
@@ -1086,6 +1270,21 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
         longitude={locationData?.longitude || null}
         address={locationData?.address || null}
       />
+
+      {/* Atualize a renderização do KilometerDialog para passar o vehicleId */}
+      {showKilometerDialog && (
+        <Dialog open={showKilometerDialog} onOpenChange={setShowKilometerDialog}>
+          <DialogContent className="sm:max-w-md">
+            <KilometerDialog
+              onSubmit={handleKilometerSubmit}
+              onCancel={() => setShowKilometerDialog(false)}
+              vehicleId={checklist.vehicle?.id || ""}
+              initialValue={responses.vehicleKilometer || ""}
+              checklistId={checklistId} // Pass checklistId to KilometerDialog
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

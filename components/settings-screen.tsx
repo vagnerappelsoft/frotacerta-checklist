@@ -1,10 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, RefreshCw, Trash2, Database, Download, Info, HelpCircle } from "lucide-react"
+import { RefreshCw, Trash2, Database, Info, HelpCircle, Clock, LogOut } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useAuth } from "@/hooks/use-auth"
+import { syncService } from "@/lib/sync-service"
 
 export function SettingsScreen({
   onNavigate,
@@ -20,14 +24,84 @@ export function SettingsScreen({
   onSyncNow?: () => void
 }) {
   const [syncInProgress, setSyncInProgress] = useState(false)
+  const { user, logout } = useAuth()
+
+  const router = useRouter()
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  const handleLogout = () => {
+    const confirmLogout = window.confirm("Tem certeza que deseja sair do aplicativo?")
+    if (confirmLogout) {
+      setIsLoggingOut(true)
+      // Pequeno delay para feedback visual
+      setTimeout(() => {
+        logout()
+        router.push("/login")
+      }, 500)
+    }
+  }
+
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+
+  // Buscar a data da última sincronização ao carregar o componente
+  useEffect(() => {
+    // Obter a data da última sincronização do syncService
+    const lastSync = syncService.getLastSyncTime()
+    setLastSyncTime(lastSync)
+  }, [])
+
+  // Formatar a data da última sincronização
+  const formatLastSyncTime = () => {
+    if (!lastSyncTime) return "Nunca sincronizado"
+
+    // Verificar se a data é de hoje
+    const today = new Date()
+    const isToday =
+      lastSyncTime.getDate() === today.getDate() &&
+      lastSyncTime.getMonth() === today.getMonth() &&
+      lastSyncTime.getFullYear() === today.getFullYear()
+
+    // Formatar a hora
+    const hours = lastSyncTime.getHours().toString().padStart(2, "0")
+    const minutes = lastSyncTime.getMinutes().toString().padStart(2, "0")
+    const timeString = `${hours}:${minutes}`
+
+    // Se for hoje, mostrar apenas a hora
+    if (isToday) {
+      return `Hoje às ${timeString}`
+    }
+
+    // Se for ontem
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const isYesterday =
+      lastSyncTime.getDate() === yesterday.getDate() &&
+      lastSyncTime.getMonth() === yesterday.getMonth() &&
+      lastSyncTime.getFullYear() === yesterday.getFullYear()
+
+    if (isYesterday) {
+      return `Ontem às ${timeString}`
+    }
+
+    // Para outras datas, mostrar a data completa
+    const day = lastSyncTime.getDate().toString().padStart(2, "0")
+    const month = (lastSyncTime.getMonth() + 1).toString().padStart(2, "0")
+    const year = lastSyncTime.getFullYear()
+
+    return `${day}/${month}/${year} às ${timeString}`
+  }
 
   const handleSyncNow = () => {
     if (onSyncNow) {
       setSyncInProgress(true)
       onSyncNow()
-      // Reset após 3 segundos, mesmo se não houver resposta
+
+      // Atualizar a data da última sincronização após a sincronização
       setTimeout(() => {
         setSyncInProgress(false)
+        // Obter a data atualizada
+        const updatedLastSync = syncService.getLastSyncTime()
+        setLastSyncTime(updatedLastSync)
       }, 3000)
     }
   }
@@ -44,17 +118,16 @@ export function SettingsScreen({
   }
 
   return (
-    <div className="container max-w-md mx-auto py-4 px-4">
-      <div className="flex justify-between items-center mb-4">
-        {onBack ? (
-          <Button variant="ghost" size="icon" onClick={onBack}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        ) : (
-          <div />
-        )}
-        <h1 className="text-xl font-bold">Configurações</h1>
-        <div className="w-9" />
+    <div className="container max-w-md mx-auto p-4">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Configurações</h1>
+          <p className="text-muted-foreground">Gerencie suas preferências e dados</p>
+        </div>
+        <Avatar>
+          <AvatarImage src="/placeholder.svg?height=40&width=40" alt="Usuário" />
+          <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+        </Avatar>
       </div>
 
       <ScrollArea className="h-[calc(100vh-8rem)]">
@@ -89,6 +162,15 @@ export function SettingsScreen({
                 >
                   {pendingSyncs || 0}
                 </div>
+              </div>
+
+              {/* Adicionando a data da última sincronização */}
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-sm font-medium">Última sincronização</p>
+                  <p className="text-xs text-gray-500">{formatLastSyncTime()}</p>
+                </div>
+                <Clock className="h-4 w-4 text-gray-400" />
               </div>
 
               <div className="pt-2">
@@ -133,15 +215,6 @@ export function SettingsScreen({
                 <Database className="mr-2 h-4 w-4" />
                 Testar API
               </Button>
-
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => onNavigate && onNavigate("updates")}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Verificar atualizações
-              </Button>
             </CardContent>
           </Card>
 
@@ -169,6 +242,24 @@ export function SettingsScreen({
                 <Button variant="outline" className="w-full justify-start mt-1">
                   <HelpCircle className="mr-2 h-4 w-4" />
                   Ajuda e suporte
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start mt-1 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                >
+                  {isLoggingOut ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Saindo...
+                    </>
+                  ) : (
+                    <>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sair
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>

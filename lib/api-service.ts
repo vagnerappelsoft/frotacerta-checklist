@@ -514,13 +514,26 @@ export class ApiService {
       }
 
       // Adaptar o formato dos veículos para o formato esperado pelo aplicativo
-      return vehicles.map((vehicle: any) => ({
-        id: vehicle.id?.toString() || Math.random().toString(36).substring(2, 9),
-        name: vehicle.name || vehicle.description || "Veículo sem nome",
-        licensePlate: vehicle.plate || vehicle.licensePlate || "Sem placa",
-        type: vehicle.type || "Veículo", // Ajuste conforme necessário
-        status: vehicle.status || "available", // Ajuste conforme necessário
-      }))
+      const mappedVehicles = vehicles.map((vehicle: any) => {
+        // Log individual vehicle data for debugging
+        console.log("Vehicle data from API:", vehicle)
+
+        return {
+          id: vehicle.id?.toString() || Math.random().toString(36).substring(2, 9),
+          name: vehicle.name || vehicle.description || "Veículo sem nome",
+          // Ensure we capture the license plate from all possible field names
+          licensePlate: vehicle.plate || vehicle.licensePlate || "",
+          // Keep the original plate field if it exists
+          plate: vehicle.plate || vehicle.licensePlate || "",
+          fleetNumber: vehicle.fleetNumber || vehicle.fleet_number || vehicle.fleet || "",
+          status: vehicle.status || "available", // Ajuste conforme necessário
+        }
+      })
+
+      // Log the mapped vehicles for debugging
+      console.log("Mapped vehicles:", mappedVehicles)
+
+      return mappedVehicles
     } catch (error: any) {
       console.error("Erro ao buscar veículos:", error)
       // Em caso de erro, retornar um array vazio em vez de propagar o erro
@@ -549,11 +562,41 @@ export class ApiService {
       const flowSize = checklist.template?.flowSize || checklist.flowSize || 1
       const flowStep = checklist.flowStep || 1
 
-      console.log(`Preparando checklist para envio: flowSize=${flowSize}, flowStep=${flowStep}`)
+      // Obter a quilometragem do veículo (se disponível)
+      const vehicleKm = checklist.responses?.vehicleKilometer
+        ? Number.parseInt(checklist.responses.vehicleKilometer.replace(/\D/g, ""), 10)
+        : 0
+
+      console.log(`Preparando checklist para envio: flowSize=${flowSize}, flowStep=${flowStep}, km=${vehicleKm}`)
 
       try {
         // Processar os itens do checklist com mídia de forma assíncrona
         const formattedItems = await this.formatChecklistItemsForApi(checklist)
+
+        // Preparar o array de locations
+        let locations = []
+        if (checklist.responses?.location) {
+          locations = [
+            {
+              flowStep: flowStep,
+              latitude: checklist.responses.location.latitude || 0,
+              longitude: checklist.responses.location.longitude || 0,
+              accuracy: checklist.responses.location.accuracy || 0,
+              address: checklist.responses.location.address || "Unknown",
+            },
+          ]
+        } else {
+          // Se não houver dados de localização, incluir uma localização padrão
+          locations = [
+            {
+              flowStep: flowStep,
+              latitude: 0,
+              longitude: 0,
+              accuracy: 0,
+              address: "Unknown",
+            },
+          ]
+        }
 
         // Construir o objeto de checklist no formato da API
         const checklistData = {
@@ -566,7 +609,7 @@ export class ApiService {
             {
               vehicleId: Number(checklist.vehicle?.id || "0"),
               flowStep: flowStep,
-              vehicleKm: 0, // Ajuste conforme necessário
+              vehicleKm: vehicleKm, // Usar a quilometragem informada
             },
           ],
           flowSize: flowSize, // Usar o flowSize do template
@@ -579,17 +622,7 @@ export class ApiService {
               data: formattedItems,
             },
           ],
-          locations: checklist.responses?.location
-            ? [
-                {
-                  flowStep: flowStep,
-                  latitude: checklist.responses.location.latitude,
-                  longitude: checklist.responses.location.longitude,
-                  accuracy: checklist.responses.location.accuracy || 0,
-                  address: checklist.responses.location.address || "",
-                },
-              ]
-            : [],
+          locations: locations, // Incluir o array de locations
         }
 
         // Adicionar após a construção do objeto checklistData:
@@ -599,8 +632,10 @@ export class ApiService {
           dataSize: JSON.stringify(checklistData).length,
           modelId: checklistData.modelId,
           vehicleId: checklistData.vehicleData[0].vehicleId,
+          vehicleKm: checklistData.vehicleData[0].vehicleKm,
           itemsCount: checklistData.flowData[0].data.length,
           userId: checklistData.userId,
+          locations: checklistData.locations,
         })
 
         console.log("Enviando checklist para API:", JSON.stringify(checklistData, null, 2))
@@ -641,8 +676,35 @@ export class ApiService {
             }
           }) || []
 
-        // Também precisamos atualizar o objeto simplificado que é usado como fallback em caso de erro
-        // Localize o trecho onde o objeto simplifiedChecklistData é criado e adicione o campo createdAt
+        // Obter a quilometragem do veículo (se disponível)
+        const vehicleKm = checklist.responses?.vehicleKilometer
+          ? Number.parseInt(checklist.responses.vehicleKilometer.replace(/\D/g, ""), 10)
+          : 0
+
+        // Preparar o array de locations
+        let locations = []
+        if (checklist.responses?.location) {
+          locations = [
+            {
+              flowStep: flowStep,
+              latitude: checklist.responses.location.latitude || 0,
+              longitude: checklist.responses.location.longitude || 0,
+              accuracy: checklist.responses.location.accuracy || 0,
+              address: checklist.responses.location.address || "Unknown",
+            },
+          ]
+        } else {
+          // Se não houver dados de localização, incluir uma localização padrão
+          locations = [
+            {
+              flowStep: flowStep,
+              latitude: 0,
+              longitude: 0,
+              accuracy: 0,
+              address: "Unknown",
+            },
+          ]
+        }
 
         // Construir objeto de checklist simplificado
         const simplifiedChecklistData = {
@@ -655,7 +717,7 @@ export class ApiService {
             {
               vehicleId: Number.parseInt(checklist.vehicle?.id || "0"),
               flowStep: flowStep,
-              vehicleKm: 0,
+              vehicleKm: vehicleKm, // Usar a quilometragem informada
             },
           ],
           flowSize: flowSize,
@@ -668,17 +730,7 @@ export class ApiService {
               data: simplifiedItems,
             },
           ],
-          locations: checklist.responses?.location
-            ? [
-                {
-                  flowStep: flowStep,
-                  latitude: checklist.responses.location.latitude,
-                  longitude: checklist.responses.location.longitude,
-                  accuracy: checklist.responses.location.accuracy || 0,
-                  address: checklist.responses.location.address || "",
-                },
-              ]
-            : [],
+          locations: locations, // Incluir o array de locations
         }
 
         console.log("Enviando checklist simplificado para API (sem mídia)")
@@ -914,7 +966,9 @@ export class ApiService {
 
   // Forçar modo de dados de exemplo (útil para testes)
   setMockMode(useMock: boolean): void {
-    this.useMockData = useMock
+    // Always set to false regardless of the parameter
+    this.useMockData = false
+    console.log("Mock mode disabled: Using only API data")
   }
 
   // Método para registrar um novo usuário
@@ -991,26 +1045,38 @@ export class ApiService {
       case 4:
         return "text"
       case 5:
-        return "audio"
+        return "select" // Changed from "audio" to "select" to properly handle OK/Não OK options
       default:
         return "text"
     }
   }
 
-  // And add this new helper method to handle answer values:
-  private getAnswerValues(answer: any): string[] {
-    if (answer && answer.answerValues && Array.isArray(answer.answerValues)) {
-      return answer.answerValues
+  private getAnswerValuesFromItem(item: any): string[] {
+    // Check if the item has answer options
+    if (item.answerOptions && Array.isArray(item.answerOptions)) {
+      return item.answerOptions
+    }
+
+    // If the item has answer.answerValues, use those
+    if (item.answer && item.answer.answerValues && Array.isArray(item.answer.answerValues)) {
+      return item.answer.answerValues
+    }
+
+    // If the item has answerValues directly, use those
+    if (item.answerValues && Array.isArray(item.answerValues)) {
+      return item.answerValues
     }
 
     // Default values by answer type
-    switch (answer?.answerTypeId) {
+    switch (item.answerTypeId) {
       case 1: // Sim/Não
         return ["Sim", "Não"]
       case 2: // Bom/Regular/Ruim
         return ["Ótimo", "Bom", "Regular", "Ruim"]
       case 3: // Litragem
         return ["Cheio", "1/4", "1/2", "3/4", "Vazio"]
+      case 5: // OK/Não OK
+        return ["OK", "Não OK"]
       default:
         return []
     }
@@ -1223,8 +1289,29 @@ export class ApiService {
       return item.answerOptions
     }
 
-    // If not, use the default values based on the answer type
-    return this.getAnswerValues(item)
+    // If the item has answer.answerValues, use those
+    if (item.answer && item.answer.answerValues && Array.isArray(item.answer.answerValues)) {
+      return item.answer.answerValues
+    }
+
+    // If the item has answerValues directly, use those
+    if (item.answerValues && Array.isArray(item.answerValues)) {
+      return item.answerValues
+    }
+
+    // Default values by answer type
+    switch (item.answerTypeId) {
+      case 1: // Sim/Não
+        return ["Sim", "Não"]
+      case 2: // Bom/Regular/Ruim
+        return ["Ótimo", "Bom", "Regular", "Ruim"]
+      case 3: // Litragem
+        return ["Cheio", "1/4", "1/2", "3/4", "Vazio"]
+      case 5: // OK/Não OK
+        return ["OK", "Não OK"]
+      default:
+        return []
+    }
   }
 
   // Adicione um método para enviar fotos com o prefixo correto

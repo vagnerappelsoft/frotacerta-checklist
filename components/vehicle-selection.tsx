@@ -8,29 +8,25 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChevronLeft } from "lucide-react"
 
-// Importar dados de exemplo para uso offline
-import { VEHICLES as DEFAULT_VEHICLES } from "@/data/mock-vehicles"
-
 interface VehicleSelectionProps {
   onSelectVehicle: (vehicle: any) => void
   onBack: () => void
   checklistType: string
-  vehicles?: any[] // Veículos para uso offline
+  vehicles: any[] // Receive vehicles from props instead of using mock data
 }
 
-export function VehicleSelection({
-  onSelectVehicle,
-  onBack,
-  checklistType,
-  vehicles = DEFAULT_VEHICLES,
-}: VehicleSelectionProps) {
+export function VehicleSelection({ onSelectVehicle, onBack, checklistType, vehicles = [] }: VehicleSelectionProps) {
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Log vehicles data for debugging
+  console.log("Vehicles data:", vehicles)
 
   const filteredVehicles = vehicles.filter(
     (vehicle) =>
-      vehicle.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vehicle.licensePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vehicle.type.toLowerCase().includes(searchQuery.toLowerCase()),
+      vehicle.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (vehicle.licensePlate && vehicle.licensePlate.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (vehicle.plate && vehicle.plate.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (vehicle.fleetNumber && vehicle.fleetNumber.toString().toLowerCase().includes(searchQuery.toLowerCase())),
   )
 
   return (
@@ -48,7 +44,7 @@ export function VehicleSelection({
       <div className="relative mb-6">
         <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar veículo ou placa..."
+          placeholder="Buscar veículo, placa ou frota..."
           className="pl-9"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -75,8 +71,16 @@ export function VehicleSelection({
                   </div>
                 </CardHeader>
                 <CardContent className="py-2">
-                  <p className="text-sm font-medium">Placa: {vehicle.licensePlate}</p>
-                  <p className="text-sm text-muted-foreground">Tipo: {vehicle.type}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Placa:</p>
+                      <p className="text-sm">{vehicle.plate || vehicle.licensePlate || "Não informada"}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Frota:</p>
+                      <p className="text-sm">{vehicle.fleetNumber || "Não informado"}</p>
+                    </div>
+                  </div>
                 </CardContent>
                 <CardFooter className="flex justify-between pt-0 pb-3">
                   <div className="flex items-center">

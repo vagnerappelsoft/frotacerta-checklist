@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Checklist Veicular",
-    short_name: "Checklist",
+    name: "Frota Certa Checklist",
+    short_name: "Frota Certa",
     description: "Aplicativo de checklist veicular para motoristas",
     start_url: "/",
     display: "standalone",

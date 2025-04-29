@@ -1,8 +1,8 @@
 "use client"
 
-import { CheckCircle, Download, Share2, ImageIcon, FileAudio, MapPin } from "lucide-react"
+import { CheckCircle, ImageIcon, FileAudio, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LocationMap } from "@/components/location-map"
@@ -118,16 +118,6 @@ export function ChecklistComplete({ completedChecklist, onStartNew }: ChecklistC
                   </div>
                 )}
               </CardContent>
-              <CardFooter className="flex gap-2">
-                <Button variant="outline" className="flex-1">
-                  <Download className="h-4 w-4 mr-2" />
-                  Baixar PDF
-                </Button>
-                <Button variant="outline" className="flex-1">
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Compartilhar
-                </Button>
-              </CardFooter>
             </Card>
           </TabsContent>
 
@@ -297,12 +287,6 @@ export function ChecklistComplete({ completedChecklist, onStartNew }: ChecklistC
                   </div>
                 </ScrollArea>
               </CardContent>
-              <CardFooter>
-                <Button variant="outline" className="w-full">
-                  <Download className="h-4 w-4 mr-2" />
-                  Baixar Relatório Completo
-                </Button>
-              </CardFooter>
             </Card>
           </TabsContent>
         </Tabs>

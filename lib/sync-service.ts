@@ -199,6 +199,11 @@ class SyncService {
           }
         }
 
+        // Verificar integridade dos dados após sincronização
+        if (this.isOnline()) {
+          await this.verifyDataIntegrity(allData)
+        }
+
         // Atualizar o timestamp da última sincronização
         this.setLastSyncTime(new Date())
 
@@ -225,6 +230,165 @@ class SyncService {
     }
   }
 
+  // Nova função para verificar a integridade dos dados
+  async verifyDataIntegrity(apiData: any): Promise<void> {
+    console.log("Verificando integridade dos dados...")
+    this.dispatchEvent({ type: "progress", message: "Verificando integridade dos dados" })
+
+    try {
+      // 1. Verificar integridade dos modelos de checklist (templates)
+      await this.verifyTemplatesIntegrity(apiData.models || [])
+
+      // 2. Verificar integridade dos veículos
+      await this.verifyVehiclesIntegrity(apiData.vehicles || [])
+
+      // 3. Verificar integridade dos checklists
+      await this.verifyChecklistsIntegrity(apiData.checklists || [])
+
+      console.log("Verificação de integridade concluída com sucesso")
+      this.dispatchEvent({ type: "progress", message: "Verificação de integridade concluída" })
+    } catch (error) {
+      console.error("Erro ao verificar integridade dos dados:", error)
+      this.dispatchEvent({ type: "error", message: `Erro ao verificar integridade: ${error}` })
+    }
+  }
+
+  // Verificar integridade dos modelos de checklist
+  private async verifyTemplatesIntegrity(apiTemplates: any[]): Promise<void> {
+    console.log("Verificando integridade dos modelos de checklist...")
+
+    // Obter todos os modelos armazenados localmente
+    const localTemplates = await offlineStorage.getAllItems("templates")
+
+    // Criar um mapa dos modelos da API para facilitar a busca
+    const apiTemplatesMap = new Map()
+    apiTemplates.forEach((template) => {
+      apiTemplatesMap.set(template.id.toString(), template)
+    })
+
+    // Verificar modelos locais que não existem mais na API
+    const templatesToDelete = localTemplates.filter(
+      (localTemplate) => !apiTemplatesMap.has(localTemplate.id.toString()) && localTemplate.fromApi === true,
+    )
+
+    // Excluir modelos que não existem mais na API
+    if (templatesToDelete.length > 0) {
+      console.log(`Excluindo ${templatesToDelete.length} modelos que não existem mais na API`)
+
+      for (const template of templatesToDelete) {
+        console.log(`Excluindo modelo: ${template.id} - ${template.title || template.name}`)
+        await offlineStorage.removeItem("templates", template.id)
+      }
+
+      this.dispatchEvent({
+        type: "progress",
+        message: `${templatesToDelete.length} modelos obsoletos foram removidos`,
+      })
+    }
+  }
+
+  // Verificar integridade dos veículos
+  private async verifyVehiclesIntegrity(apiVehicles: any[]): Promise<void> {
+    console.log("Verificando integridade dos veículos...")
+
+    // Obter todos os veículos armazenados localmente
+    const localVehicles = await offlineStorage.getAllItems("vehicles")
+
+    // Criar um mapa dos veículos da API para facilitar a busca
+    const apiVehiclesMap = new Map()
+    apiVehicles.forEach((vehicle) => {
+      apiVehiclesMap.set(vehicle.id.toString(), vehicle)
+    })
+
+    // Verificar veículos locais que não existem mais na API
+    const vehiclesToDelete = localVehicles.filter(
+      (localVehicle) => !apiVehiclesMap.has(localVehicle.id.toString()) && localVehicle.fromApi === true,
+    )
+
+    // Excluir veículos que não existem mais na API
+    if (vehiclesToDelete.length > 0) {
+      console.log(`Excluindo ${vehiclesToDelete.length} veículos que não existem mais na API`)
+
+      for (const vehicle of vehiclesToDelete) {
+        console.log(`Excluindo veículo: ${vehicle.id} - ${vehicle.name}`)
+        await offlineStorage.removeItem("vehicles", vehicle.id)
+      }
+
+      this.dispatchEvent({
+        type: "progress",
+        message: `${vehiclesToDelete.length} veículos obsoletos foram removidos`,
+      })
+    }
+  }
+
+  // Verificar integridade dos checklists
+  private async verifyChecklistsIntegrity(apiChecklists: any[]): Promise<void> {
+    console.log("Verificando integridade dos checklists...")
+
+    // Obter todos os modelos e veículos para verificação de referências
+    const localTemplates = await offlineStorage.getAllItems("templates")
+    const localVehicles = await offlineStorage.getAllItems("vehicles")
+
+    // Criar mapas para facilitar a busca
+    const templatesMap = new Map()
+    localTemplates.forEach((template) => {
+      templatesMap.set(template.id.toString(), template)
+    })
+
+    const vehiclesMap = new Map()
+    localVehicles.forEach((vehicle) => {
+      vehiclesMap.set(vehicle.id.toString(), vehicle)
+    })
+
+    // Obter todos os checklists armazenados localmente
+    const localChecklists = await offlineStorage.getAllItems("checklists")
+
+    // Verificar checklists com referências inválidas
+    const checklistsWithInvalidRefs = localChecklists.filter((checklist) => {
+      // Verificar se o modelo de checklist ainda existe
+      const templateId = checklist.template?.id?.toString()
+      const templateExists = templateId ? templatesMap.has(templateId) : false
+
+      // Verificar se o veículo ainda existe
+      const vehicleId = checklist.vehicle?.id?.toString()
+      const vehicleExists = vehicleId ? vehiclesMap.has(vehicleId) : false
+
+      // Se o checklist veio da API e o modelo ou veículo não existe mais, marcar para exclusão
+      if (checklist.fromApi === true) {
+        return !templateExists || !vehicleExists
+      }
+
+      // Para checklists criados localmente, verificar apenas se não estão sincronizados
+      // Se não estiver sincronizado e tiver referências inválidas, marcar para exclusão
+      if (!checklist.synced) {
+        return !templateExists || !vehicleExists
+      }
+
+      // Se estiver sincronizado, não marcar para exclusão mesmo com referências inválidas
+      return false
+    })
+
+    // Excluir checklists com referências inválidas
+    if (checklistsWithInvalidRefs.length > 0) {
+      console.log(`Excluindo ${checklistsWithInvalidRefs.length} checklists com referências inválidas`)
+
+      for (const checklist of checklistsWithInvalidRefs) {
+        console.log(`Excluindo checklist: ${checklist.id} - ${checklist.title || checklist.template?.title}`)
+        await offlineStorage.removeItem("checklists", checklist.id)
+      }
+
+      this.dispatchEvent({
+        type: "progress",
+        message: `${checklistsWithInvalidRefs.length} checklists com referências inválidas foram removidos`,
+      })
+    }
+  }
+
+  // Função auxiliar para verificar se o dispositivo está online
+  private isOnline(): boolean {
+    return typeof navigator !== "undefined" && navigator.onLine
+  }
+
   // Adicionar métodos auxiliares para extrair informações dos checklists da API
   // Adicione os métodos extractChecklistItems, extractVehicleInfo e extractResponses como públicos
   // para que possam ser usados no hook de autenticação
@@ -249,6 +413,7 @@ class SyncService {
         requiredAudio: item.requiredAudio || false,
         requiresObservation: item.requiredObservation || false,
         requiredObservation: item.requiredObservation || false,
+        answerTypeId: item.answerTypeId, // Ensure answerTypeId is passed
         answerValues: this.getAnswerValuesFromItem(item),
         fromApi: true, // Marcar como vindo da API
       }))
@@ -266,6 +431,7 @@ class SyncService {
         requiredAudio: item.requiredAudio || false,
         requiresObservation: item.requiredObservation || false,
         requiredObservation: item.requiredObservation || false,
+        answerTypeId: item.answerTypeId, // Ensure answerTypeId is passed
         answerValues: this.getAnswerValuesFromItem(item),
         fromApi: true, // Marcar como vindo da API
       }))
@@ -386,7 +552,7 @@ class SyncService {
         case 4:
           return "text"
         case 5:
-          return "audio"
+          return "select" // Changed from "audio" to "select"
         default:
           return "text"
       }
@@ -398,8 +564,14 @@ class SyncService {
   // Add this new helper method for answer values
   // Altere de private para public
   public getAnswerValuesFromItem(item: any): string[] {
+    // If the item has answer.answerValues, use those
     if (item.answer && item.answer.answerValues && Array.isArray(item.answer.answerValues)) {
       return item.answer.answerValues
+    }
+
+    // If the item has answerValues directly, use those
+    if (item.answerValues && Array.isArray(item.answerValues)) {
+      return item.answerValues
     }
 
     // Default values by answer type
@@ -410,6 +582,8 @@ class SyncService {
         return ["Ótimo", "Bom", "Regular", "Ruim"]
       case 3: // Litragem
         return ["Cheio", "1/4", "1/2", "3/4", "Vazio"]
+      case 5: // OK/Não OK
+        return ["OK", "Não OK"]
       default:
         return []
     }

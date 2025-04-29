@@ -613,6 +613,35 @@ export class OfflineStorage {
       return false
     }
   }
+
+  // Método para buscar um checklist específico por ID
+  async getChecklistById(checklistId: string) {
+    try {
+      if (!this.db) {
+        await this.init()
+      }
+
+      const transaction = this.db!.transaction(["checklists"], "readonly")
+      const store = transaction.objectStore("checklists")
+
+      return new Promise((resolve, reject) => {
+        const request = store.get(checklistId)
+
+        request.onsuccess = (event) => {
+          const checklist = request.result
+          resolve(checklist || null)
+        }
+
+        request.onerror = (event) => {
+          console.error("Erro ao buscar checklist por ID:", event)
+          reject(new Error("Falha ao buscar checklist do armazenamento local"))
+        }
+      })
+    } catch (error) {
+      console.error("Erro ao acessar o banco de dados:", error)
+      return null
+    }
+  }
 }
 
 // Singleton para uso em toda a aplicação

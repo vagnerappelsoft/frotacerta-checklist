@@ -11,14 +11,14 @@ import { ApiErrorHandler } from "@/components/api-error-handler"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Checklist Veicular",
+  title: "Frota Certa Checklist",
   description: "Aplicativo de checklist veicular para motoristas",
   themeColor: "#f97316",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Checklist Veicular",
+    title: "Frota Certa Checklist",
   },
   formatDetection: {
     telephone: false,
@@ -45,8 +45,8 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="application-name" content="Checklist Veicular" />
-        <meta name="apple-mobile-web-app-title" content="Checklist Veicular" />
+        <meta name="application-name" content="Frota Certa Checklist" />
+        <meta name="apple-mobile-web-app-title" content="Frota Certa Checklist" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
         <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png" />
         <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png" />
