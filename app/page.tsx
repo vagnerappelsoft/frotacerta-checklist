@@ -670,6 +670,8 @@ export default function DriverChecklistPage() {
       // Limpar qualquer erro anterior
       setGlobalError(null)
 
+      console.log("Continuando checklist existente:", checklist)
+
       // Definir a segunda etapa do checklist
       setActiveTab("apply-checklist")
       setSelectedTemplate(checklist.template)
@@ -677,19 +679,27 @@ export default function DriverChecklistPage() {
       setStep("form")
 
       // Armazenar o checklist existente para uso no formulário
+      // Importante: Incluir o ID original do checklist e o modelId para garantir que seja o mesmo checklist
       localStorage.setItem(
         "continuing_checklist",
         JSON.stringify({
           id: checklist.id,
+          modelId: checklist.template?.id || checklist.modelId,
           flowStep: 2,
-          previousResponses: checklist.responses,
+          previousResponses: checklist.responses || {},
+          previousPhotos: checklist.photos || {},
+          previousAudios: checklist.audios || {},
+          originalChecklist: checklist.id, // Adicionar referência ao checklist original
         }),
       )
+
+      // Armazenar o ID do checklist original para referência
+      localStorage.setItem("checklistId", checklist.id)
 
       // Cachear a página atual após a navegação
       setTimeout(cacheCurrentPage, 500)
 
-      console.log("Continuando checklist:", checklist.id)
+      console.log("Continuando checklist com ID:", checklist.id)
     } catch (error) {
       console.error("Erro ao continuar checklist:", error)
       setGlobalError(error instanceof Error ? error : new Error("Erro ao continuar checklist"))

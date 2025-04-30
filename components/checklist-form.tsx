@@ -99,27 +99,39 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
         if (continuingData) {
           const parsedData = JSON.parse(continuingData)
 
+          console.log("Dados de continuação encontrados:", parsedData)
+
           // Only load if the model IDs match to prevent cross-contamination
-          if (parsedData.modelId === modelId.toString()) {
+          if (
+            parsedData.modelId &&
+            (parsedData.modelId.toString() === modelId.toString() || parsedData.originalChecklist)
+          ) {
             console.log(`Loading existing responses for model ${modelId}`)
 
-            // Set the checklistId to match the continuing checklist
+            // IMPORTANTE: Preservar o ID do checklist original
             if (parsedData.id) {
+              console.log(`Usando ID de checklist existente: ${parsedData.id}`)
               setChecklistId(parsedData.id)
+
+              // Garantir que o ID também seja armazenado no localStorage
+              localStorage.setItem("checklistId", parsedData.id)
             }
 
             // Load previous responses if they exist
             if (parsedData.previousResponses) {
+              console.log("Carregando respostas anteriores")
               setResponses(parsedData.previousResponses)
             }
 
             // Load previous photos if they exist
             if (parsedData.previousPhotos) {
+              console.log("Carregando fotos anteriores")
               setPhotos(parsedData.previousPhotos)
             }
 
             // Load previous audios if they exist
             if (parsedData.previousAudios) {
+              console.log("Carregando áudios anteriores")
               setAudios(parsedData.previousAudios)
             }
           } else {
@@ -127,6 +139,8 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
             // Clear continuing data since it's for a different model
             localStorage.removeItem("continuing_checklist")
           }
+        } else {
+          console.log("Nenhum dado de continuação encontrado, iniciando novo checklist")
         }
       } catch (error) {
         console.error("Error loading existing responses:", error)

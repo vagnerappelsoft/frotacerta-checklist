@@ -667,6 +667,12 @@ export class ApiService {
         ]
       }
 
+      // Adicione esta verificação antes de construir o objeto checklistData:
+
+      // Verificar se estamos continuando um checklist existente (flowStep 2)
+      const isContinuation = flowStep > 1
+      console.log(`Verificando se é continuação: flowStep=${flowStep}, isContinuation=${isContinuation}`)
+
       // Construir o objeto de checklist no formato da API
       const checklistData = {
         name: checklistName,
@@ -692,6 +698,8 @@ export class ApiService {
           },
         ],
         locations: locations,
+        // Se for continuação (flowStep 2), incluir o ID do checklist original
+        ...(isContinuation && checklist.id ? { id: checklist.id } : {}),
       }
 
       console.log("Enviando checklist para API:", JSON.stringify(checklistData, null, 2))

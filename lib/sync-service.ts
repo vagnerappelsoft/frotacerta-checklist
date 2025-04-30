@@ -655,6 +655,24 @@ class SyncService {
               continue
             }
 
+            // Verificar se é uma continuação de checklist (flowStep 2)
+            const flowStep = checklist.flowStep || 1
+            const isContinuation = flowStep > 1
+
+            if (isContinuation) {
+              console.log(`Sincronizando continuação de checklist: ID=${checklist.id}, flowStep=${flowStep}`)
+
+              // Se for continuação, garantir que o ID original seja usado
+              if (!checklist.id) {
+                console.warn("Checklist em continuação sem ID, verificando localStorage")
+                const storedId = localStorage.getItem("checklistId")
+                if (storedId) {
+                  checklist.id = storedId
+                  console.log(`ID recuperado do localStorage: ${storedId}`)
+                }
+              }
+            }
+
             if (sync.operation === "create" || sync.operation === "update") {
               try {
                 console.log(`Sincronizando checklist ${sync.itemId}...`)
