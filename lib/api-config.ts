@@ -1,7 +1,7 @@
 // Configurações da API Frota Certa
 
 // URL base da API
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://api-checklist.frotacerta.com.br"
+export const API_BASE_URL = "https://api-checklist.frotacerta.com.br"
 
 // ID do Cliente padrão
 export const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID || "frota-teste"
@@ -68,8 +68,7 @@ export const API_ENDPOINTS = {
   vehicles: (clientId: string) => `${clientId}/vehicle`,
 
   // Sincronização de dados
-  syncDataApp: (clientId: string, userId?: string | number) =>
-    `${clientId}/syncDataApp${userId ? `?userId=${userId}` : ""}`,
+  syncDataApp: (clientId: string, userId: string | number) => `${clientId}/SyncDataApp/${userId}`,
 
   // Outros endpoints
   healthcheck: (clientId: string) => `${clientId}/healthcheck`,

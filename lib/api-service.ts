@@ -1159,8 +1159,9 @@ export class ApiService {
       }
 
       const clientId = this.getClientId()
-      // Usar o endpoint de sincronização completa
+      // Usar o endpoint de sincronização completa com o userId como parte do caminho
       let endpoint = API_ENDPOINTS.syncDataApp(clientId, userId)
+
       // Adicionar showDeleted=false para evitar ambiguidade na coluna deleted_at
       endpoint += endpoint.includes("?") ? "&showDeleted=false" : "?showDeleted=false"
 
