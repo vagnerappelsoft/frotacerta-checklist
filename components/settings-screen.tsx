@@ -91,18 +91,35 @@ export function SettingsScreen({
     return `${day}/${month}/${year} às ${timeString}`
   }
 
-  const handleSyncNow = () => {
+  const handleSyncNow = async () => {
     if (onSyncNow) {
       setSyncInProgress(true)
-      onSyncNow()
 
-      // Atualizar a data da última sincronização após a sincronização
-      setTimeout(() => {
-        setSyncInProgress(false)
-        // Obter a data atualizada
+      try {
+        console.log("Iniciando sincronização forçada a partir da tela de configurações")
+
+        // Desativar explicitamente o modo mockado para garantir que estamos usando a API real
+        if (typeof window !== "undefined" && window.apiService) {
+          window.apiService.setMockMode(false)
+        }
+
+        // Chamar o método de sincronização forçada
+        await syncService.forceSyncNow()
+
+        // Atualizar a data da última sincronização após a sincronização
         const updatedLastSync = syncService.getLastSyncTime()
         setLastSyncTime(updatedLastSync)
-      }, 3000)
+
+        console.log("Sincronização forçada concluída com sucesso")
+
+        // Chamar o callback onSyncNow para notificar o componente pai
+        onSyncNow()
+      } catch (error) {
+        console.error("Erro durante a sincronização forçada:", error)
+        alert("Ocorreu um erro durante a sincronização. Por favor, tente novamente.")
+      } finally {
+        setSyncInProgress(false)
+      }
     }
   }
 
@@ -182,7 +199,7 @@ export function SettingsScreen({
                   {syncInProgress ? (
                     <>
                       <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Sincronizando...
+                      Sincronizando dados...
                     </>
                   ) : (
                     <>
