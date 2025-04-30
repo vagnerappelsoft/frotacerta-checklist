@@ -11,6 +11,8 @@ import { LocationMapDialog } from "@/components/location-map-dialog"
 import { useState, useEffect } from "react"
 import { apiService } from "./api-service"
 import { offlineStorage } from "@/lib/offline-storage"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 interface ChecklistDetailsProps {
   checklist: any
@@ -22,20 +24,91 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
   const [allResponses, setAllResponses] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [modelId, setModelId] = useState<string | null>(null)
 
-  // Função para buscar todas as respostas de todos os flowsteps
+  // Function to fetch all flowstep responses
   useEffect(() => {
     const fetchAllFlowstepResponses = async () => {
       // Verificar se o checklist tem dados válidos
-      if (!checklist || !checklist.template || !checklist.responses) {
-        console.error("Dados de checklist inválidos:", checklist)
-        setError("Dados de checklist inválidos ou incompletos.")
+      if (!checklist) {
+        console.error("Invalid checklist: checklist is null or undefined")
+        setError("Invalid or incomplete checklist data.")
         return
       }
 
-      console.log("Processando checklist:", checklist)
+      console.log("Processing checklist:", checklist)
 
-      // Se não for um checklist multi-etapas, use apenas as respostas atuais
+      // Adaptar o formato de dados da API para o formato esperado pelo componente
+      // Se o checklist veio da API (tem flowData), extrair as respostas do formato da API
+      if (
+        checklist.fromApi &&
+        checklist.flowData &&
+        Array.isArray(checklist.flowData) &&
+        checklist.flowData.length > 0
+      ) {
+        try {
+          // Extrair as respostas de flowData.data
+          const apiResponses: any = {}
+
+          const flowStepData = checklist.flowData[0]
+          if (flowStepData.data && Array.isArray(flowStepData.data)) {
+            flowStepData.data.forEach((item: any) => {
+              // Converter a resposta para o formato esperado pelo aplicativo
+              if (item.answer === "true") {
+                apiResponses[item.itemId] = true
+              } else if (item.answer === "false") {
+                apiResponses[item.itemId] = false
+              } else {
+                apiResponses[item.itemId] = item.answer
+              }
+
+              // Se tiver observações, adicionar
+              if (item.observations) {
+                apiResponses[`${item.itemId}-observation`] = item.observations
+              }
+            })
+          }
+
+          // Se o template não tem items, mas temos flowData com items, criar items no template
+          if (
+            (!checklist.template.items || !checklist.template.items.length) &&
+            checklist.flowData[0].data &&
+            Array.isArray(checklist.flowData[0].data)
+          ) {
+            checklist.template.items = checklist.flowData[0].data.map((item: any) => ({
+              id: item.itemId?.toString() || item.id?.toString(),
+              question: item.itemName,
+              type: mapAnswerTypeToAppType(item.answerTypeId || 1),
+              requiresPhoto: item.requiredImage || false,
+              requiredImage: item.requiredImage || false,
+              requiresAudio: item.requiredAudio || false,
+              requiredAudio: item.requiredAudio || false,
+              requiresObservation: item.requiredObservation || false,
+              requiredObservation: item.requiredObservation || false,
+            }))
+          }
+
+          // Adicionar as respostas adaptadas ao checklist
+          checklist.responses = apiResponses
+        } catch (error) {
+          console.error("Error processing API checklist responses:", error)
+        }
+      }
+
+      // Continuação da verificação original
+      if (!checklist.template || !checklist.responses) {
+        console.error("Invalid checklist data:", checklist)
+        setError("Invalid or incomplete checklist data.")
+        return
+      }
+
+      console.log("Processing checklist:", checklist)
+
+      // Extract and store the model ID for data isolation
+      const currentModelId = checklist.template?.id || checklist.modelId || null
+      setModelId(currentModelId)
+
+      // If not a multi-step checklist, just use current responses
       if (!checklist.flowSize || checklist.flowSize <= 1) {
         setAllResponses([
           {
@@ -51,7 +124,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
       setError(null)
 
       try {
-        // Inicializa com as respostas atuais
+        // Initialize with current responses
         const responses = [
           {
             flowStep: checklist.flowStep || 1,
@@ -60,62 +133,98 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
           },
         ]
 
-        // Se o checklist tiver um ID pai, busque as outras etapas
+        // If checklist has a parent ID, fetch the other steps
         if (checklist.parentId) {
-          // Este é um flowstep 2+, busque o flowstep 1
+          // This is flowstep 2+, fetch flowstep 1
           try {
-            // Primeiro tente buscar do armazenamento local
-            let parentChecklist = await offlineStorage.getChecklistById(checklist.parentId)
+            // First try to fetch from local storage
+            let parentChecklist = null
 
-            // Se não encontrar localmente, tente buscar da API
-            if (!parentChecklist) {
-              parentChecklist = await apiService.getChecklistById(checklist.parentId)
+            try {
+              parentChecklist = await offlineStorage.getChecklistById(checklist.parentId)
+            } catch (error) {
+              console.warn("Error fetching parent checklist from IndexedDB:", error)
+              // Continue with API fallback
             }
 
+            // If not found locally, try to fetch from API
+            if (!parentChecklist) {
+              try {
+                parentChecklist = await apiService.getChecklistById(checklist.parentId)
+              } catch (apiError) {
+                console.error("Error fetching parent checklist from API:", apiError)
+              }
+            }
+
+            // Only include if it's from the same model
             if (parentChecklist && parentChecklist.responses) {
-              responses.push({
-                flowStep: 1,
-                responses: parentChecklist.responses,
-                template: parentChecklist.template,
-              })
+              const parentModelId = parentChecklist.template?.id || parentChecklist.modelId || null
+
+              if (parentModelId === currentModelId) {
+                responses.push({
+                  flowStep: 1,
+                  responses: parentChecklist.responses,
+                  template: parentChecklist.template,
+                })
+              } else {
+                console.warn(`Parent checklist has different model ID: ${parentModelId} vs ${currentModelId}`)
+              }
             } else {
-              console.warn("Checklist pai não encontrado ou sem respostas:", checklist.parentId)
+              console.warn("Parent checklist not found or has no responses:", checklist.parentId)
             }
           } catch (err) {
-            console.error("Erro ao buscar checklist pai:", err)
+            console.error("Error fetching parent checklist:", err)
           }
         } else if (checklist.childId) {
-          // Este é um flowstep 1, busque o flowstep 2+
+          // This is flowstep 1, fetch flowstep 2+
           try {
-            // Primeiro tente buscar do armazenamento local
-            let childChecklist = await offlineStorage.getChecklistById(checklist.childId)
+            // First try to fetch from local storage
+            let childChecklist = null
 
-            // Se não encontrar localmente, tente buscar da API
-            if (!childChecklist) {
-              childChecklist = await apiService.getChecklistById(checklist.childId)
+            try {
+              childChecklist = await offlineStorage.getChecklistById(checklist.childId)
+            } catch (error) {
+              console.warn("Error fetching child checklist from IndexedDB:", error)
+              // Continue with API fallback
             }
 
+            // If not found locally, try to fetch from API
+            if (!childChecklist) {
+              try {
+                childChecklist = await apiService.getChecklistById(checklist.childId)
+              } catch (apiError) {
+                console.error("Error fetching child checklist from API:", apiError)
+              }
+            }
+
+            // Only include if it's from the same model
             if (childChecklist && childChecklist.responses) {
-              responses.push({
-                flowStep: childChecklist.flowStep || 2,
-                responses: childChecklist.responses,
-                template: childChecklist.template,
-              })
+              const childModelId = childChecklist.template?.id || childChecklist.modelId || null
+
+              if (childModelId === currentModelId) {
+                responses.push({
+                  flowStep: childChecklist.flowStep || 2,
+                  responses: childChecklist.responses,
+                  template: childChecklist.template,
+                })
+              } else {
+                console.warn(`Child checklist has different model ID: ${childModelId} vs ${currentModelId}`)
+              }
             } else {
-              console.warn("Checklist filho não encontrado ou sem respostas:", checklist.childId)
+              console.warn("Child checklist not found or has no responses:", checklist.childId)
             }
           } catch (err) {
-            console.error("Erro ao buscar checklist filho:", err)
+            console.error("Error fetching child checklist:", err)
           }
         }
 
-        // Ordena as respostas por flowStep
+        // Sort responses by flowStep
         responses.sort((a, b) => a.flowStep - b.flowStep)
-        console.log("Respostas processadas:", responses)
+        console.log("Processed responses:", responses)
         setAllResponses(responses)
       } catch (err) {
-        console.error("Erro ao buscar respostas de flowsteps:", err)
-        setError("Não foi possível carregar todas as etapas do checklist.")
+        console.error("Error fetching flowstep responses:", err)
+        setError("Could not load all checklist steps.")
       } finally {
         setIsLoading(false)
       }
@@ -124,7 +233,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
     fetchAllFlowstepResponses()
   }, [checklist])
 
-  // Função para contar problemas em todas as etapas
+  // Function to count issues across all steps
   const countIssues = () => {
     let count = 0
 
@@ -132,7 +241,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
       if (!flowstepData.responses) return
 
       Object.entries(flowstepData.responses).forEach(([key, value]) => {
-        // Apenas contar respostas booleanas que são false
+        // Only count boolean responses that are false
         const item = flowstepData.template?.items?.find((i: any) => i.id === key)
         if (item && item.type === "boolean" && value === false) {
           count++
@@ -143,7 +252,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
     return count
   }
 
-  // Função para contar fotos em todas as etapas
+  // Function to count photos across all steps
   const countPhotos = () => {
     let total = 0
 
@@ -158,7 +267,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
     return total
   }
 
-  // Função para contar áudios em todas as etapas
+  // Function to count audios across all steps
   const countAudios = () => {
     let total = 0
 
@@ -173,7 +282,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
     return total
   }
 
-  // Função para renderizar a resposta com base no tipo de item
+  // Function to render response based on item type
   const renderResponse = (item: any, response: any, observation: any, photos: any[] = [], audios: any[] = []) => {
     return (
       <>
@@ -261,7 +370,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
           </div>
         )}
 
-        {/* Exibir fotos */}
+        {/* Display photos */}
         {photos && photos.length > 0 && (
           <div className="mt-2">
             <div className="text-sm font-medium text-muted-foreground flex items-center">
@@ -282,7 +391,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
           </div>
         )}
 
-        {/* Exibir áudios */}
+        {/* Display audios */}
         {audios && audios.length > 0 && (
           <div className="mt-2">
             <div className="text-sm font-medium text-muted-foreground flex items-center">
@@ -316,6 +425,11 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
         <div className="ml-2">
           <h1 className="text-xl font-bold">Detalhes do Checklist</h1>
           <p className="text-sm text-muted-foreground">{checklist.template?.title}</p>
+          {modelId && (
+            <Badge variant="outline" className="mt-1 text-xs">
+              Modelo ID: {modelId}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -325,7 +439,13 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
         </div>
       )}
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Erro</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="summary" className="mb-6">
         <TabsList className="grid w-full grid-cols-2">
@@ -435,9 +555,9 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
                   )}
 
                   {allResponses.map((flowstepData, flowIndex) => {
-                    // Verificar se o flowstepData tem dados válidos
+                    // Check if flowstepData has valid data
                     if (!flowstepData.template?.items || !flowstepData.responses) {
-                      console.warn("Dados de flowstep inválidos:", flowstepData)
+                      console.warn("Invalid flowstep data:", flowstepData)
                       return null
                     }
 
@@ -452,9 +572,9 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
                         )}
 
                         {flowstepData.template.items.map((item: any, index: number) => {
-                          // Verificar se o item tem dados válidos
+                          // Check if item has valid data
                           if (!item || !item.id) {
-                            console.warn("Item inválido:", item)
+                            console.warn("Invalid item:", item)
                             return null
                           }
 
@@ -479,7 +599,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
                 </div>
               </ScrollArea>
             </CardContent>
-            <CardFooter>{/* Botões de ação removidos conforme solicitado anteriormente */}</CardFooter>
+            <CardFooter>{/* Action buttons removed as requested previously */}</CardFooter>
           </Card>
         </TabsContent>
       </Tabs>
@@ -496,4 +616,22 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
       )}
     </div>
   )
+}
+
+// Adicionar esta nova função auxiliar no componente
+function mapAnswerTypeToAppType(answerTypeId: number): string {
+  switch (answerTypeId) {
+    case 1:
+      return "boolean"
+    case 2:
+      return "condition"
+    case 3:
+      return "fuel"
+    case 4:
+      return "text"
+    case 5:
+      return "select"
+    default:
+      return "text"
+  }
 }

@@ -6,6 +6,7 @@ import { syncService } from "@/lib/sync-service"
 import { useRouter } from "next/navigation"
 import { offlineStorage } from "@/lib/offline-storage"
 import { STORAGE_KEYS } from "@/lib/constants"
+import { ClientDataManager } from "@/lib/client-data-manager"
 
 // Definir o tipo para o usuário
 interface User {
@@ -138,6 +139,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [])
+
+  const handleClientTransition = async (newClientId: string): Promise<void> => {
+    try {
+      // Check if client ID has changed
+      const previousClientId = localStorage.getItem(STORAGE_KEYS.PREVIOUS_CLIENT_ID)
+
+      if (previousClientId && previousClientId !== newClientId) {
+        console.log(`Client transition detected: ${previousClientId} -> ${newClientId}`)
+
+        // Clear all data from previous client
+        await ClientDataManager.clearAllData()
+
+        // Update stored client ID
+        localStorage.setItem(STORAGE_KEYS.PREVIOUS_CLIENT_ID, newClientId)
+        localStorage.setItem(STORAGE_KEYS.CURRENT_CLIENT_ID, newClientId)
+
+        // Reset any auth state
+        setUser(null)
+        setIsLoading(true)
+      }
+    } catch (error) {
+      console.error("Error during client transition:", error)
+    }
+  }
 
   // Atualizar a interface
   const handleLogin = async (username: string, password: string) => {

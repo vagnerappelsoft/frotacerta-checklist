@@ -89,7 +89,7 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
     return count
   }, [])
 
-  // Function to normalize checklist data from different sources
+  // Melhorar o método normalizeChecklistData para lidar com diferentes formatos de checklists
   const normalizeChecklistData = useCallback((checklist: any) => {
     // Create a deep copy to avoid modifying the original
     const normalizedChecklist = JSON.parse(JSON.stringify(checklist))
@@ -104,6 +104,19 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
       }
     }
 
+    // Ensure template has an ID
+    if (normalizedChecklist.template && !normalizedChecklist.template.id) {
+      console.warn("Template sem ID, gerando ID temporário para checklist:", normalizedChecklist.id)
+      normalizedChecklist.template.id = `template_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    }
+
+    // Ensure template has a title
+    if (normalizedChecklist.template && !normalizedChecklist.template.title && !normalizedChecklist.template.name) {
+      console.warn("Template sem título, usando valor padrão para checklist:", normalizedChecklist.id)
+      normalizedChecklist.template.title = "Checklist sem título"
+      normalizedChecklist.template.name = "Checklist sem título"
+    }
+
     // Ensure vehicle data is properly structured
     if (!normalizedChecklist.vehicle && normalizedChecklist.vehicleData && normalizedChecklist.vehicleData.length > 0) {
       normalizedChecklist.vehicle = {
@@ -111,6 +124,12 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
         name: normalizedChecklist.vehicleData[0].vehicle?.name || "Veículo não especificado",
         licensePlate: normalizedChecklist.vehicleData[0].vehicle?.plate || "Sem placa",
       }
+    }
+
+    // Ensure vehicle has an ID
+    if (normalizedChecklist.vehicle && !normalizedChecklist.vehicle.id) {
+      console.warn("Veículo sem ID, gerando ID temporário para checklist:", normalizedChecklist.id)
+      normalizedChecklist.vehicle.id = `vehicle_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
     }
 
     // Ensure status is properly structured
@@ -136,17 +155,87 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
 
       console.log("Refreshing checklists data...")
 
-      // If we're online, try to fetch from API first
+      // Se temos checklists offline fornecidos como props, usá-los primeiro
+      if (offlineChecklists && offlineChecklists.length > 0) {
+        console.log("Using provided offline checklists:", offlineChecklists.length)
+
+        // Normalizar e processar os checklists
+        const normalizedChecklists = offlineChecklists.map(normalizeChecklistData)
+
+        // Separate completed and pending
+        const completed = normalizedChecklists.filter(
+          (checklist) =>
+            checklist.status?.id === 1 || (checklist.submittedAt && (!checklist.flowSize || checklist.flowSize === 1)),
+        )
+
+        const pending = normalizedChecklists.filter(
+          (checklist) =>
+            checklist.status?.id === 2 || (checklist.flowSize > 1 && checklist.flowStep < checklist.flowSize),
+        )
+
+        // Sort by date
+        completed.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
+        pending.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
+
+        setCompletedChecklists(completed)
+        setPendingChecklists(pending)
+        setDataSource("props")
+        setIsLoading(false)
+        setIsRefreshing(false)
+        return
+      }
+
+      // Se não temos checklists nas props, carregar do armazenamento local
+      console.log("Fetching checklists from local storage...")
+      const localChecklists = await offlineStorage.getAllItems<any>("checklists")
+      console.log("Local storage checklists:", localChecklists.length)
+
+      if (localChecklists.length > 0) {
+        // Normalizar e processar os checklists
+        const normalizedChecklists = localChecklists.map(normalizeChecklistData)
+
+        // Separate completed and pending
+        const completed = normalizedChecklists.filter(
+          (checklist) =>
+            checklist.status?.id === 1 || (checklist.submittedAt && (!checklist.flowSize || checklist.flowSize === 1)),
+        )
+
+        const pending = normalizedChecklists.filter(
+          (checklist) =>
+            checklist.status?.id === 2 || (checklist.flowSize > 1 && checklist.flowStep < checklist.flowSize),
+        )
+
+        // Sort by date
+        completed.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
+        pending.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
+
+        setCompletedChecklists(completed)
+        setPendingChecklists(pending)
+        setDataSource("local")
+        setIsLoading(false)
+        setIsRefreshing(false)
+        return
+      }
+
+      // Se estiver online, tentar buscar da API
       if (isOnline) {
         try {
-          console.log("Attempting to fetch checklists from API...")
+          console.log("Attempting to fetch checklists from API using SyncDataApp endpoint...")
           apiService.setMockMode(false)
 
-          // Use the dedicated checklists endpoint instead
-          const apiChecklists = await apiService.getChecklists()
+          // Use the main SyncDataApp endpoint to get all data including checklists
+          const apiData = await apiService.getAllAppData()
+
+          // Extract checklists from the response
+          const apiChecklists = apiData.checklists || []
 
           // Processar API checklists - não tratar lista vazia como erro
           console.log(`Retrieved ${apiChecklists.length} checklists from API`)
+
+          // Se não houver checklists, não tratar como erro, apenas continuar
+          if (apiChecklists.length === 0) {
+            console.log("No checklists returned from API - this is normal if user has no checklists yet")
+          }
 
           // Process API checklists
           const apiChecklistsNormalized = apiChecklists.map(normalizeChecklistData)
@@ -188,69 +277,7 @@ export function MyChecklistsScreen({ onViewChecklist, offlineChecklists }: MyChe
         }
       }
 
-      // If API fetch failed or we're offline, try using provided props
-      if (offlineChecklists && offlineChecklists.length > 0) {
-        console.log("Using provided offline checklists:", offlineChecklists.length)
-
-        // Normalize and process the checklists
-        const normalizedChecklists = offlineChecklists.map(normalizeChecklistData)
-
-        // Separate completed and pending
-        const completed = normalizedChecklists.filter(
-          (checklist) =>
-            checklist.status?.id === 1 || (checklist.submittedAt && (!checklist.flowSize || checklist.flowSize === 1)),
-        )
-
-        const pending = normalizedChecklists.filter(
-          (checklist) =>
-            checklist.status?.id === 2 || (checklist.flowSize > 1 && checklist.flowStep < checklist.flowSize),
-        )
-
-        // Sort by date
-        completed.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
-        pending.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
-
-        setCompletedChecklists(completed)
-        setPendingChecklists(pending)
-        setDataSource("props")
-        setIsLoading(false)
-        setIsRefreshing(false)
-        return
-      }
-
-      // Last resort: load from local storage
-      console.log("Fetching checklists from local storage...")
-      const localChecklists = await offlineStorage.getAllItems<any>("checklists")
-      console.log("Local storage checklists:", localChecklists.length)
-
-      if (localChecklists.length > 0) {
-        // Normalize and process the checklists
-        const normalizedChecklists = localChecklists.map(normalizeChecklistData)
-
-        // Separate completed and pending
-        const completed = normalizedChecklists.filter(
-          (checklist) =>
-            checklist.status?.id === 1 || (checklist.submittedAt && (!checklist.flowSize || checklist.flowSize === 1)),
-        )
-
-        const pending = normalizedChecklists.filter(
-          (checklist) =>
-            checklist.status?.id === 2 || (checklist.flowSize > 1 && checklist.flowStep < checklist.flowSize),
-        )
-
-        // Sort by date
-        completed.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
-        pending.sort((a, b) => getRelevantDate(b) - getRelevantDate(a))
-
-        setCompletedChecklists(completed)
-        setPendingChecklists(pending)
-        setDataSource("local")
-        setIsLoading(false)
-        setIsRefreshing(false)
-        return
-      }
-
-      // If we get here, we couldn't load any data
+      // Se chegamos aqui, não conseguimos carregar nenhum dado
       setCompletedChecklists([])
       setPendingChecklists([])
       setError("Não foi possível carregar os checklists. Tente novamente mais tarde.")

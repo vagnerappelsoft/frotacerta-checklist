@@ -35,6 +35,8 @@ export const STORAGE_KEYS = {
   AUTH_TOKEN: "auth_token",
   USER_DATA: "user_data",
   CLIENT_ID: "client_id",
+  CURRENT_CLIENT_ID: "current_client_id",
+  PREVIOUS_CLIENT_ID: "previous_client_id",
   LAST_SYNC: "last_sync_time",
   SYNC_TYPE: "last_sync_type",
   SYNC_IN_PROGRESS: "sync_in_progress",

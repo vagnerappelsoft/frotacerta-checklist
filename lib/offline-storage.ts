@@ -5,7 +5,14 @@ interface StorableData {
 }
 
 // Tipos de dados que podem ser armazenados
-type DataType = "checklists" | "templates" | "vehicles" | "settings"
+type DataType =
+  | "checklists"
+  | "templates"
+  | "vehicles"
+  | "settings"
+  | "sync_queue"
+  | "checklist_progress"
+  | "model_data"
 
 // Classe para gerenciar o armazenamento offline
 export class OfflineStorage {
@@ -15,7 +22,8 @@ export class OfflineStorage {
   private dbInitPromise: Promise<boolean> | null = null
   private syncQueueCache: Map<string, boolean> = new Map() // Cache para evitar duplicação na fila de sincronização
 
-  constructor(dbName = "vehicle_checklist_db", dbVersion = 1) {
+  constructor(dbName = "vehicle_checklist_db", dbVersion = 2) {
+    // Increased version number to trigger upgrade
     this.dbName = dbName
     this.dbVersion = dbVersion
   }
@@ -32,7 +40,7 @@ export class OfflineStorage {
       return true
     }
 
-    console.log("Iniciando inicialização do IndexedDB...")
+    console.log("Starting IndexedDB initialization...")
 
     // Criar uma nova promessa de inicialização
     this.dbInitPromise = new Promise((resolve, reject) => {
@@ -45,23 +53,23 @@ export class OfflineStorage {
           return
         }
 
-        console.log("Abrindo banco de dados:", this.dbName, "versão:", this.dbVersion)
+        console.log("Opening database:", this.dbName, "version:", this.dbVersion)
         const request = indexedDB.open(this.dbName, this.dbVersion)
 
         request.onerror = (event) => {
           const error = (event.target as IDBOpenDBRequest).error
-          console.error("Erro ao abrir o banco de dados:", error)
+          console.error("Error opening database:", error)
           this.dbInitPromise = null // Resetar a promessa para permitir novas tentativas
-          reject(new Error(`Erro ao abrir IndexedDB: ${error?.message || "Desconhecido"}`))
+          reject(new Error(`Error opening IndexedDB: ${error?.message || "Unknown"}`))
         }
 
         request.onsuccess = (event) => {
-          console.log("Banco de dados aberto com sucesso")
+          console.log("Database opened successfully")
           this.db = (event.target as IDBOpenDBRequest).result
 
           // Configurar tratamento de erro para o banco de dados
           this.db.onerror = (event) => {
-            console.error("Erro no banco de dados:", (event.target as IDBDatabase).error)
+            console.error("Database error:", (event.target as IDBDatabase).error)
           }
 
           this.dbInitPromise = null // Limpar a promessa, pois a inicialização foi concluída
@@ -69,33 +77,33 @@ export class OfflineStorage {
         }
 
         request.onupgradeneeded = (event) => {
-          console.log("Atualizando estrutura do banco de dados...")
+          console.log("Upgrading database structure...")
           const db = (event.target as IDBOpenDBRequest).result
 
           // Criar stores para cada tipo de dado
           if (!db.objectStoreNames.contains("checklists")) {
-            console.log("Criando store 'checklists'")
+            console.log("Creating store 'checklists'")
             db.createObjectStore("checklists", { keyPath: "id" })
           }
 
           if (!db.objectStoreNames.contains("templates")) {
-            console.log("Criando store 'templates'")
+            console.log("Creating store 'templates'")
             db.createObjectStore("templates", { keyPath: "id" })
           }
 
           if (!db.objectStoreNames.contains("vehicles")) {
-            console.log("Criando store 'vehicles'")
+            console.log("Creating store 'vehicles'")
             db.createObjectStore("vehicles", { keyPath: "id" })
           }
 
           if (!db.objectStoreNames.contains("settings")) {
-            console.log("Criando store 'settings'")
+            console.log("Creating store 'settings'")
             db.createObjectStore("settings", { keyPath: "id" })
           }
 
           // Store para controlar sincronização
           if (!db.objectStoreNames.contains("sync_queue")) {
-            console.log("Criando store 'sync_queue'")
+            console.log("Creating store 'sync_queue'")
             const syncStore = db.createObjectStore("sync_queue", { keyPath: "id", autoIncrement: true })
             syncStore.createIndex("status", "status", { unique: false })
             syncStore.createIndex("timestamp", "timestamp", { unique: false })
@@ -103,10 +111,22 @@ export class OfflineStorage {
             syncStore.createIndex("type_itemId", ["type", "itemId"], { unique: false })
           }
 
-          console.log("Estrutura do banco de dados atualizada")
+          // Add new stores for model-specific data
+          if (!db.objectStoreNames.contains("checklist_progress")) {
+            console.log("Creating store 'checklist_progress'")
+            db.createObjectStore("checklist_progress", { keyPath: "id" })
+          }
+
+          if (!db.objectStoreNames.contains("model_data")) {
+            console.log("Creating store 'model_data'")
+            const modelStore = db.createObjectStore("model_data", { keyPath: "id" })
+            modelStore.createIndex("modelId", "modelId", { unique: false })
+          }
+
+          console.log("Database structure updated")
         }
       } catch (error) {
-        console.error("Erro ao inicializar IndexedDB:", error)
+        console.error("Error initializing IndexedDB:", error)
         this.dbInitPromise = null
         reject(error)
       }
@@ -639,6 +659,50 @@ export class OfflineStorage {
       })
     } catch (error) {
       console.error("Erro ao acessar o banco de dados:", error)
+      return null
+    }
+  }
+
+  // Add a method to get an item by ID
+  async getItemById<T>(type: DataType, id: string): Promise<T | null> {
+    try {
+      if (!this.db) {
+        await this.init()
+      }
+
+      return new Promise((resolve, reject) => {
+        if (!this.db) {
+          reject(null)
+          return
+        }
+
+        try {
+          // Check if the object store exists
+          if (!this.db.objectStoreNames.contains(type)) {
+            console.error(`Object store '${type}' does not exist`)
+            resolve(null)
+            return
+          }
+
+          const transaction = this.db.transaction([type], "readonly")
+          const store = transaction.objectStore(type)
+          const request = store.get(id)
+
+          request.onsuccess = () => {
+            resolve(request.result || null)
+          }
+
+          request.onerror = (event) => {
+            console.error(`Error getting item from IndexedDB:`, event)
+            reject(null)
+          }
+        } catch (error) {
+          console.error(`Error in IndexedDB transaction:`, error)
+          reject(null)
+        }
+      })
+    } catch (error) {
+      console.error(`Error getting item:`, error)
       return null
     }
   }

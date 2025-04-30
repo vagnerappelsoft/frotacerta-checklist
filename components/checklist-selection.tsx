@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Search, Truck, Calendar } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -16,13 +16,60 @@ interface ChecklistSelectionProps {
 
 export function ChecklistSelection({ onSelectChecklist, checklists = [] }: ChecklistSelectionProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [filteredChecklists, setFilteredChecklists] = useState<any[]>([])
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
 
-  const filteredChecklists = checklists.filter(
-    (checklist) =>
-      checklist.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      checklist.vehicle?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      checklist.licensePlate?.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  // Filter checklists based on search query
+  useEffect(() => {
+    const filtered = checklists.filter(
+      (checklist) =>
+        checklist.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        checklist.vehicle?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        checklist.licensePlate?.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+    setFilteredChecklists(filtered)
+  }, [checklists, searchQuery])
+
+  // Handle checklist selection with model isolation
+  const handleSelectChecklist = async (checklist: any) => {
+    try {
+      // Get the model ID from the checklist
+      const modelId = checklist.template?.id || checklist.modelId || null
+
+      // If we have a model ID and it's different from the previously selected one
+      if (modelId && modelId !== selectedModelId) {
+        console.log(`Switching from model ${selectedModelId} to ${modelId}`)
+
+        // Store the current model ID
+        setSelectedModelId(modelId)
+
+        // Clear any continuing checklist data that might be from a different model
+        const continuingData = localStorage.getItem("continuing_checklist")
+        if (continuingData) {
+          try {
+            const parsedData = JSON.parse(continuingData)
+            if (parsedData.modelId !== modelId.toString()) {
+              console.log(`Clearing continuing checklist data from different model: ${parsedData.modelId}`)
+              localStorage.removeItem("continuing_checklist")
+            }
+          } catch (e) {
+            console.error("Error parsing continuing checklist data:", e)
+            localStorage.removeItem("continuing_checklist")
+          }
+        }
+
+        // Save the selected model ID for reference
+        localStorage.setItem("selected_model_id", modelId.toString())
+      }
+
+      // Call the parent component's handler
+      onSelectChecklist(checklist)
+    } catch (error) {
+      console.error("Error handling checklist selection:", error)
+      // Call the parent component's handler anyway
+      onSelectChecklist(checklist)
+    }
+  }
 
   return (
     <div className="container max-w-md mx-auto p-4">
@@ -76,7 +123,7 @@ export function ChecklistSelection({ onSelectChecklist, checklists = [] }: Check
                 <CardFooter>
                   <Button
                     className="w-full bg-blue-500 hover:bg-blue-600 text-white"
-                    onClick={() => onSelectChecklist(checklist)}
+                    onClick={() => handleSelectChecklist(checklist)}
                   >
                     Iniciar Checklist
                   </Button>

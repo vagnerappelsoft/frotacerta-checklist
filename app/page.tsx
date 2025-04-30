@@ -58,7 +58,7 @@ export default function DriverChecklistPage() {
     }
   }, [])
 
-  // Inicializar o armazenamento offline e o serviço de sincronização
+  // Modificar o useEffect de inicialização do aplicativo para evitar chamadas redundantes
   useEffect(() => {
     const initializeApp = async () => {
       try {
@@ -93,7 +93,7 @@ export default function DriverChecklistPage() {
 
         // Carregar dados offline independentemente do estado de conexão
         try {
-          // Tentar carregar dados do armazenamento local
+          // Tentar carregar dados do armazenamento local primeiro
           const storedTemplates = await offlineStorage.getAllItems("templates")
           const storedVehicles = await offlineStorage.getAllItems("vehicles")
           const storedChecklists = await offlineStorage.getAllItems("checklists")
@@ -129,7 +129,7 @@ export default function DriverChecklistPage() {
             // Verificar se o usuário está logado
             const userData = localStorage.getItem(STORAGE_KEYS.USER_DATA)
             if (userData) {
-              // Forçar sincronização completa
+              // Forçar sincronização completa - usar apenas SyncDataApp, não chamar getChecklistTemplates
               const syncResult = await syncService.forceFullSync()
 
               console.log("Resultado da sincronização forçada:", syncResult)
@@ -546,6 +546,24 @@ export default function DriverChecklistPage() {
       const status = {
         id: isLastStep ? 1 : 2, // Se for a última etapa, status é 1 (Concluído), senão é 2 (Em andamento)
         name: isLastStep ? "Concluído" : "Em Andamento",
+      }
+
+      // Garantir que o template tenha um ID válido
+      if (!sanitizedTemplate.id) {
+        console.warn("Template sem ID, gerando ID temporário")
+        sanitizedTemplate.id = `template_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+      }
+
+      // Garantir que o template tenha um título válido
+      if (!sanitizedTemplate.title && !sanitizedTemplate.name) {
+        console.warn("Template sem título, usando valor padrão")
+        sanitizedTemplate.title = "Checklist sem título"
+      }
+
+      // Garantir que o veículo tenha um ID válido
+      if (!sanitizedVehicle.id) {
+        console.warn("Veículo sem ID, gerando ID temporário")
+        sanitizedVehicle.id = `vehicle_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
       }
 
       // Criar o objeto de checklist completo com dados sanitizados

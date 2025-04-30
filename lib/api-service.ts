@@ -12,6 +12,9 @@ export class ApiService {
   private useMockData = false
   private clientId = "" // Initialize as empty string
 
+  // Adicionar uma flag para monitorar se já estamos fazendo requisição para getAllAppData
+  private isGettingAllAppData = false
+
   // Atualizar o construtor para usar as configurações
   constructor(baseUrl?: string, clientId?: string) {
     // Se não houver baseUrl, usar a configuração padrão
@@ -299,7 +302,34 @@ export class ApiService {
 
   // Atualizar o método getChecklistTemplates
   async getChecklistTemplates(additionalParams = ""): Promise<any[]> {
+    // Verificar se já temos os dados de SyncDataApp em cache
+    const cacheKey = "appData_default_full"
+    const cachedData = sessionStorage.getItem(cacheKey)
+
+    if (cachedData) {
+      try {
+        const { data, timestamp } = JSON.parse(cachedData)
+        const now = Date.now()
+
+        // Usar cache se tiver menos de 5 minutos
+        if (now - timestamp < 5 * 60 * 1000 && data.models && Array.isArray(data.models)) {
+          console.log("Usando modelos do cache SyncDataApp em vez de fazer chamada para checklistModel")
+          return data.models.map((model: any) => ({
+            ...model,
+            id: model.id?.toString() || Math.random().toString(36).substring(2, 9),
+            title: model.name || "Modelo sem nome",
+            description: model.description || "Sem descrição",
+          }))
+        }
+      } catch (e) {
+        console.error("Erro ao ler cache:", e)
+      }
+    }
+
     try {
+      // Se não temos cache ou não podemos usá-lo, fazer a chamada API
+      console.log("AVISO: Fazendo chamada para getChecklistTemplates - isso deve ser evitado")
+
       const clientId = this.getClientId()
       // Usar o endpoint configurado com parâmetros adicionais
       let endpoint = API_ENDPOINTS.checklistModels(clientId)
@@ -558,7 +588,29 @@ export class ApiService {
         ? Number.parseInt(checklist.responses.vehicleKilometer.replace(/\D/g, ""), 10)
         : 0
 
-      console.log(`Preparando checklist para envio: flowSize=${flowSize}, flowStep=${flowStep}, km=${vehicleKm}`)
+      // Verificar e garantir que temos um nome válido para o checklist
+      const checklistName = checklist.template?.title || checklist.title || "Checklist sem título"
+
+      // Verificar e garantir que temos um ID de modelo válido
+      let modelId = 0
+      if (checklist.template?.id) {
+        // Tentar converter para número, garantindo que não seja NaN
+        const parsedId = Number(checklist.template.id)
+        modelId = !isNaN(parsedId) ? parsedId : 0
+      }
+
+      // Se não temos um modelId válido, não podemos prosseguir
+      if (modelId <= 0) {
+        console.error("ModelId inválido ou ausente:", {
+          templateId: checklist.template?.id,
+          modelId: modelId,
+        })
+        throw new Error("ModelId inválido ou ausente. Não é possível enviar o checklist.")
+      }
+
+      console.log(
+        `Preparando checklist para envio: name=${checklistName}, modelId=${modelId}, flowSize=${flowSize}, flowStep=${flowStep}, km=${vehicleKm}`,
+      )
 
       try {
         // Processar os itens do checklist com mídia de forma assíncrona
@@ -591,9 +643,8 @@ export class ApiService {
 
         // Construir o objeto de checklist no formato da API
         const checklistData = {
-          name: checklist.template?.title || checklist.title,
-          modelId: Number(checklist.template?.id || "0"),
-          driverId: userId, // Usar o ID do usuário como driverId também
+          name: checklistName, // Usar o nome validado
+          modelId: modelId, // Usar o modelId validado
           StartDate: submissionDate,
           createdAt: checklist.createdAt || checklist.submittedAt || submissionDate, // Usar a data de criação efetiva ou a data de submissão como fallback
           vehicleData: [
@@ -621,6 +672,7 @@ export class ApiService {
           endpoint: API_ENDPOINTS.checklists(clientId),
           method: "POST",
           dataSize: JSON.stringify(checklistData).length,
+          name: checklistData.name,
           modelId: checklistData.modelId,
           vehicleId: checklistData.vehicleData[0].vehicleId,
           vehicleKm: checklistData.vehicleData[0].vehicleKm,
@@ -699,8 +751,8 @@ export class ApiService {
 
         // Construir objeto de checklist simplificado
         const simplifiedChecklistData = {
-          name: checklist.template?.title || checklist.title,
-          modelId: Number.parseInt(checklist.template?.id || "0"),
+          name: checklistName, // Usar o nome validado
+          modelId: modelId, // Usar o modelId validado
           driverId: userId,
           StartDate: submissionDate,
           createdAt: checklist.createdAt || checklist.submittedAt || submissionDate, // Usar a data de criação efetiva ou a data de submissão como fallback
@@ -1073,11 +1125,11 @@ export class ApiService {
     }
   }
 
-  // Método para buscar todos os dados em uma única requisição
+  // Method to fetch all data in a single request - this is the main data source for the app
+  // It fetches vehicles, models, and checklists from the SyncDataApp endpoint
   async getAllAppData(userId?: string | number, updatedAt?: string): Promise<any> {
     // Verificar se já existe uma requisição em andamento
-    const requestInProgress = localStorage.getItem("app_data_request_in_progress")
-    if (requestInProgress) {
+    if (this.isGettingAllAppData) {
       console.log("Requisição getAllAppData já em andamento, usando dados em cache ou aguardando...")
 
       // Tentar usar dados em cache se disponíveis
@@ -1099,7 +1151,7 @@ export class ApiService {
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
       // Verificar novamente se a requisição ainda está em andamento
-      if (localStorage.getItem("app_data_request_in_progress")) {
+      if (this.isGettingAllAppData) {
         console.log("Requisição ainda em andamento, retornando dados vazios para evitar loop")
         return {
           totalItems: 0,
@@ -1132,7 +1184,7 @@ export class ApiService {
 
     try {
       // Marcar que uma requisição está em andamento
-      localStorage.setItem("app_data_request_in_progress", "true")
+      this.isGettingAllAppData = true
 
       // Obter o ID do usuário logado se não for fornecido
       if (!userId) {
@@ -1271,7 +1323,7 @@ export class ApiService {
       throw error
     } finally {
       // Remover o flag de requisição em andamento
-      localStorage.removeItem("app_data_request_in_progress")
+      this.isGettingAllAppData = false
     }
   }
 
@@ -1359,44 +1411,6 @@ export class ApiService {
   // Add these methods to your apiService class
 
   // Method to fetch only checklists
-  async getChecklists(params = {}): Promise<any[]> {
-    try {
-      const clientId = this.getClientId()
-      const userId = this.getUserIdFromStorage()
-
-      // Build a specific endpoint for just checklists
-      let endpoint = `${clientId}/checklist?userId=${userId}`
-
-      // Add any additional parameters
-      Object.entries(params).forEach(([key, value], index) => {
-        endpoint += `&${key}=${value}`
-      })
-
-      console.log("Fetching only checklists with endpoint:", endpoint)
-
-      const response = await this.fetchWithAuth(endpoint)
-      const responseData = await this.handleApiResponse(response, "Failed to fetch checklists")
-
-      // Process and return the data
-      const checklists = Array.isArray(responseData) ? responseData : responseData.checklists || responseData.data || []
-
-      console.log(`Retrieved ${checklists.length} checklists from API`)
-      return checklists
-    } catch (error) {
-      console.error("Error fetching checklists:", error)
-      throw error
-    }
-  }
-
-  // Already implemented but can be optimized
-  async getChecklistTemplates(additionalParams = ""): Promise<any[]> {
-    // Your existing implementation...
-  }
-
-  // Already implemented but can be optimized
-  async getVehicles(additionalParams = ""): Promise<any[]> {
-    // Your existing implementation...
-  }
 
   private getUserIdFromStorage(): string | null {
     const userData = localStorage.getItem("user_data")

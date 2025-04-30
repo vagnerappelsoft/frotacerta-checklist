@@ -8,6 +8,7 @@ class SyncService {
   private retryCount = 0
   private readonly maxRetries = 3
   private syncInProgress: Set<string> = new Set() // Controle de itens em sincronização
+  private isAppDataRequestInProgress = false // Flag para evitar múltiplas requisições
 
   constructor() {
     // Verificar se estamos no navegador antes de acessar localStorage
@@ -82,7 +83,7 @@ class SyncService {
       const now = new Date()
 
       // Se não for a primeira sincronização e a última foi recente, pular
-      if (!isInitialSync && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5 * 60 * 1000) {
+      if (!isInitialSync && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 1 * 60 * 1000) {
         console.log("Sincronização recente detectada, pulando sincronização")
         this.dispatchEvent({ type: "complete", message: "Sincronização já realizada recentemente" })
         this.isSyncing = false
@@ -90,8 +91,7 @@ class SyncService {
       }
 
       // Verificar se já existe uma requisição em andamento para getAllAppData
-      const appDataRequestInProgress = localStorage.getItem("app_data_request_in_progress")
-      if (appDataRequestInProgress) {
+      if (this.isAppDataRequestInProgress) {
         console.log("Requisição getAllAppData já em andamento, pulando sincronização duplicada")
         this.dispatchEvent({ type: "complete", message: "Sincronização já em andamento" })
         this.isSyncing = false
@@ -99,6 +99,7 @@ class SyncService {
       }
 
       // Marcar que uma requisição está em andamento
+      this.isAppDataRequestInProgress = true
       localStorage.setItem("app_data_request_in_progress", "true")
 
       try {
@@ -111,6 +112,7 @@ class SyncService {
 
         // Chamar a API com o timestamp, se disponível
         const allData = await apiService.getAllAppData(undefined, updatedAtParam)
+        // This endpoint (SyncDataApp) provides all necessary data: vehicles, models, and checklists
 
         // Log para depuração da resposta da API
         console.log("Resposta da API getAllAppData:", {
@@ -224,6 +226,7 @@ class SyncService {
       } finally {
         // Remover o flag de requisição em andamento
         localStorage.removeItem("app_data_request_in_progress")
+        this.isAppDataRequestInProgress = false
       }
     } catch (error) {
       console.error("Erro durante a sincronização:", error)
@@ -642,6 +645,16 @@ class SyncService {
               continue
             }
 
+            // Verificar se o checklist tem os campos obrigatórios
+            if (!this.validateChecklistForSync(checklist)) {
+              console.warn(
+                `Checklist ${sync.itemId} não tem campos obrigatórios, marcando como sincronizado para evitar tentativas futuras`,
+              )
+              await offlineStorage.markAsSynced(sync.id)
+              this.syncInProgress.delete(syncKey)
+              continue
+            }
+
             if (sync.operation === "create" || sync.operation === "update") {
               try {
                 console.log(`Sincronizando checklist ${sync.itemId}...`)
@@ -662,6 +675,7 @@ class SyncService {
                 // Adicionar logs detalhados antes de enviar
                 console.log(`Enviando checklist ${sync.itemId} para API:`, {
                   templateId: checklist.template?.id,
+                  templateTitle: checklist.template?.title,
                   vehicleId: checklist.vehicle?.id,
                   flowStep: checklist.flowStep || 1,
                   hasResponses: !!checklist.responses,
@@ -689,11 +703,25 @@ class SyncService {
                   errorMessage.includes("CORS") ||
                   errorMessage.includes("timeout")
 
+                // Verificar se o erro é relacionado a campos obrigatórios ausentes
+                const isRequiredFieldError =
+                  errorMessage.includes("field is required") ||
+                  errorMessage.includes("The Name field") ||
+                  errorMessage.includes("The ModelId")
+
                 if (isNetworkError) {
                   // Para erros de rede, não marcar como sincronizado para tentar novamente mais tarde
                   console.log(`Erro de rede ao sincronizar checklist ${sync.itemId}, será tentado novamente mais tarde`)
                   this.syncInProgress.delete(syncKey)
                   throw submitError
+                } else if (isRequiredFieldError) {
+                  // Para erros de campos obrigatórios, marcar como sincronizado para evitar tentativas repetidas
+                  console.warn(
+                    `Erro de campos obrigatórios no checklist ${sync.itemId}, marcando como sincronizado para evitar tentativas futuras`,
+                  )
+                  checklist.synced = true
+                  await offlineStorage.saveItem("checklists", checklist)
+                  errorCount++
                 } else {
                   // Para outros erros, marcar como sincronizado para evitar tentativas repetidas
                   console.warn(`Marcando checklist ${sync.itemId} como sincronizado apesar do erro: ${errorMessage}`)
@@ -764,6 +792,47 @@ class SyncService {
       // Limpar a lista de sincronização em andamento
       this.syncInProgress.clear()
     }
+  }
+
+  // Adicionar um novo método para validar se um checklist tem os campos obrigatórios
+  // Modificar o método validateChecklistForSync para ser mais robusto
+  private validateChecklistForSync(checklist: any): boolean {
+    // Log detalhado para depuração
+    console.log(`Validando checklist para sincronização: ${checklist.id}`, {
+      hasTemplate: !!checklist.template,
+      templateId: checklist.template?.id,
+      templateTitle: checklist.template?.title || checklist.template?.name,
+      hasVehicle: !!checklist.vehicle,
+      vehicleId: checklist.vehicle?.id,
+    })
+
+    // Verificar se o checklist tem um template
+    if (!checklist.template) {
+      console.error(`Checklist não tem template ${checklist.id}`)
+      return false
+    }
+
+    // Verificar se o template tem um ID válido
+    const templateId = checklist.template.id
+    if (!templateId) {
+      console.error(`Template do checklist não tem ID ${checklist.id}`)
+      return false
+    }
+
+    // Verificar se o template tem um título válido
+    const templateTitle = checklist.template.title || checklist.template.name
+    if (!templateTitle) {
+      console.error(`Template do checklist não tem título ${checklist.id}`)
+      return false
+    }
+
+    // Verificar se o checklist tem um veículo
+    if (!checklist.vehicle || !checklist.vehicle.id) {
+      console.error(`Checklist não tem veículo ou veículo não tem ID ${checklist.id}`)
+      return false
+    }
+
+    return true
   }
 
   // Implementação do método checkAndSync

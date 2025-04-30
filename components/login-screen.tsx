@@ -12,36 +12,40 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/hooks/use-auth"
 
-// Remove the CLIENT_ID import
-// import { CLIENT_ID } from "@/lib/constants"
 import { apiService } from "@/lib/api-service"
+import { ClientDataManager } from "@/lib/client-data-manager"
+import { STORAGE_KEYS } from "@/lib/constants"
 
 export function LoginScreen() {
-  // Remover as credenciais de teste pré-preenchidas
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [clientId, setClientId] = useState("")
+  const [isClientChanged, setIsClientChanged] = useState(false)
   const router = useRouter()
   const { login, isAuthenticated } = useAuth()
-
-  // Initialize clientId as empty string instead of using CLIENT_ID
-  const [clientId, setClientId] = useState("")
 
   // Verificar se o usuário já está autenticado
   useEffect(() => {
     if (isAuthenticated) {
       router.push("/")
     }
+
+    // Try to load the previous client ID to pre-fill the field
+    const savedClientId = localStorage.getItem(STORAGE_KEYS.CURRENT_CLIENT_ID)
+    if (savedClientId) {
+      setClientId(savedClientId)
+    }
   }, [isAuthenticated, router])
 
-  // Modificar o handleLogin para armazenar o clientId antes de fazer login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setSuccess(null)
     setIsLoading(true)
+    setIsClientChanged(false)
 
     try {
       // Validar campos
@@ -57,8 +61,19 @@ export function LoginScreen() {
         throw new Error("ID do Cliente é obrigatório")
       }
 
+      // Check if client ID has changed and clear previous data if needed
+      const clientChanged = await ClientDataManager.handleClientIdChange(clientId)
+
+      if (clientChanged) {
+        setIsClientChanged(true)
+        setSuccess("Detectamos uma mudança no ID do Cliente. Limpando dados anteriores...")
+
+        // Give UI time to update before continuing
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+
       // Armazenar o clientId no localStorage para uso pelo hook de autenticação
-      localStorage.setItem("client_id", clientId)
+      localStorage.setItem(STORAGE_KEYS.CLIENT_ID, clientId)
 
       // Configurar o clientId no serviço de API
       apiService.setClientId(clientId)
@@ -67,12 +82,19 @@ export function LoginScreen() {
       await login(username, password)
 
       // Mostrar mensagem de sucesso com indicação de sincronização
-      setSuccess("Login realizado com sucesso! Sincronizando dados...")
+      setSuccess(
+        clientChanged
+          ? "Login realizado com sucesso! Carregando dados do novo cliente..."
+          : "Login realizado com sucesso! Sincronizando dados...",
+      )
 
       // Redirecionar após um atraso maior para permitir a sincronização
-      setTimeout(() => {
-        router.push("/")
-      }, 2500)
+      setTimeout(
+        () => {
+          router.push("/")
+        },
+        clientChanged ? 3000 : 2500,
+      ) // Give more time if client changed
     } catch (err: any) {
       setError(err.message || "Falha na autenticação. Verifique suas credenciais.")
       setIsLoading(false)
@@ -168,25 +190,44 @@ export function LoginScreen() {
                   <AlertDescription>{success}</AlertDescription>
                 </Alert>
               )}
+
+              {isClientChanged && (
+                <Alert variant="default" className="bg-blue-50 border-blue-200 text-blue-800">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Mudança de Cliente</AlertTitle>
+                  <AlertDescription>
+                    Detectamos que você está acessando um cliente diferente do anterior. Todos os dados do cliente
+                    anterior foram removidos para garantir a segurança.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
             <Button type="submit" className="w-full mt-6 bg-blue-500 hover:bg-blue-600" disabled={isLoading}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {success && success.includes("Sincronizando") ? "Sincronizando dados..." : "Autenticando..."}
+                  {isClientChanged
+                    ? "Preparando ambiente..."
+                    : success && success.includes("Sincronizando")
+                      ? "Sincronizando dados..."
+                      : "Autenticando..."}
                 </>
               ) : (
                 "Entrar"
               )}
             </Button>
 
-            {isLoading && success && success.includes("Sincronizando") && (
+            {isLoading && (
               <div className="mt-4">
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
                   <div className="bg-blue-500 h-2.5 rounded-full animate-pulse" style={{ width: "100%" }}></div>
                 </div>
-                <p className="text-xs text-center mt-1 text-muted-foreground">Isso pode levar alguns segundos...</p>
+                <p className="text-xs text-center mt-1 text-muted-foreground">
+                  {isClientChanged
+                    ? "Preparando ambiente para o novo cliente..."
+                    : "Isso pode levar alguns segundos..."}
+                </p>
               </div>
             )}
           </form>
