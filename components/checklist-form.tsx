@@ -853,7 +853,7 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
 
   useEffect(() => {
     if (currentItem) {
-      console.log("Current item details:", {
+      console.log("Detalhes do item atual:", {
         id: currentItem.id,
         question: currentItem.question,
         type: currentItem.type,
@@ -861,6 +861,37 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
         answerValues: currentItem.answerValues,
         options: currentItem.options,
       })
+
+      // Verificar se o tipo está correto com base no answerTypeId
+      if (currentItem.answerTypeId) {
+        let correctType
+        switch (currentItem.answerTypeId) {
+          case 1:
+            correctType = "boolean"
+            break
+          case 2:
+            correctType = "condition"
+            break
+          case 3:
+            correctType = "fuel"
+            break
+          case 4:
+            correctType = "text"
+            break
+          case 5:
+            correctType = "select"
+            break
+          default:
+            correctType = "text"
+        }
+
+        // Se o tipo estiver incorreto, registrar um aviso
+        if (currentItem.type !== correctType) {
+          console.warn(
+            `Tipo incorreto para o item ${currentItem.id}: atual=${currentItem.type}, correto=${correctType}`,
+          )
+        }
+      }
     }
   }, [currentItem])
 
@@ -948,6 +979,17 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Log para depuração do tipo de item */}
+            {process.env.NODE_ENV !== "production" && (
+              <div className="text-xs text-gray-400 mb-2">
+                Tipo: {currentItem.type}, ID: {currentItem.id}, answerTypeId: {currentItem.answerTypeId || "N/A"}
+                {currentItem.answerValues && currentItem.answerValues.length > 0 && (
+                  <>, Opções: {currentItem.answerValues.join(", ")}</>
+                )}
+              </div>
+            )}
+
+            {/* Renderização condicional baseada no tipo de item */}
             {currentItem.type === "boolean" && (
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-3">
@@ -984,8 +1026,147 @@ export function ChecklistForm({ checklist, onSubmit, onCancel, offlineMode = fal
               </div>
             )}
 
-            {/* Other input types would go here */}
-            {/* For brevity, I'm not including all the input types */}
+            {/* Tipo de resposta: Condição (Ótimo, Bom, Regular, Ruim) */}
+            {currentItem.type === "condition" && (
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {(currentItem.answerValues || ["Ótimo", "Bom", "Regular", "Ruim"]).map((option, index) => (
+                    <Button
+                      key={index}
+                      type="button"
+                      variant={responses[currentItem.id] === option ? "default" : "outline"}
+                      className={responses[currentItem.id] === option ? "bg-blue-500 hover:bg-blue-600" : ""}
+                      onClick={() => handleConditionResponse(option)}
+                    >
+                      {option}
+                    </Button>
+                  ))}
+                </div>
+                {errors[currentItem.id] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[currentItem.id]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            {/* Tipo de resposta: Nível de Combustível */}
+            {currentItem.type === "fuel" && (
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {(currentItem.answerValues || ["Cheio", "3/4", "1/2", "1/4", "Vazio"]).map((option, index) => (
+                    <Button
+                      key={index}
+                      type="button"
+                      variant={responses[currentItem.id] === option ? "default" : "outline"}
+                      className={responses[currentItem.id] === option ? "bg-blue-500 hover:bg-blue-600" : ""}
+                      onClick={() => handleFuelLevelResponse(option)}
+                    >
+                      {option}
+                    </Button>
+                  ))}
+                </div>
+                {errors[currentItem.id] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[currentItem.id]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            {/* Tipo de resposta: Seleção (Select) */}
+            {currentItem.type === "select" && (
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {(currentItem.answerValues || ["OK", "Não OK"]).map((option, index) => (
+                    <Button
+                      key={index}
+                      type="button"
+                      variant={responses[currentItem.id] === option ? "default" : "outline"}
+                      className={responses[currentItem.id] === option ? "bg-blue-500 hover:bg-blue-600" : ""}
+                      onClick={() => handleSelectResponse(option)}
+                    >
+                      {option}
+                    </Button>
+                  ))}
+                </div>
+                {errors[currentItem.id] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[currentItem.id]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            {/* Tipo de resposta: Texto */}
+            {currentItem.type === "text" && (
+              <div className="flex flex-col gap-4">
+                <textarea
+                  className="w-full p-2 border rounded-md"
+                  rows={4}
+                  placeholder="Digite sua resposta aqui..."
+                  value={responses[currentItem.id] || ""}
+                  onChange={(e) => handleTextResponse(e.target.value)}
+                />
+                {errors[currentItem.id] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[currentItem.id]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            {/* Tipo de resposta: Número */}
+            {currentItem.type === "number" && (
+              <div className="flex flex-col gap-4">
+                <input
+                  type="number"
+                  className="w-full p-2 border rounded-md"
+                  placeholder="Digite um valor numérico..."
+                  value={responses[currentItem.id] || ""}
+                  onChange={(e) => handleNumberResponse(e.target.value)}
+                />
+                {errors[currentItem.id] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[currentItem.id]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            {/* Campo de observação (se necessário) */}
+            {(currentItem.requiredObservation || currentItem.requiresObservation) && (
+              <div className="flex flex-col gap-2 mt-4">
+                <Label className="text-base font-medium flex items-center">
+                  Observações
+                  <span className="text-blue-500 ml-1">*</span>
+                </Label>
+                <textarea
+                  className="w-full p-2 border rounded-md"
+                  rows={3}
+                  placeholder="Adicione observações sobre este item..."
+                  value={responses[`${currentItem.id}-observation`] || ""}
+                  onChange={(e) => handleObservationResponse(e.target.value)}
+                />
+                {errors[`${currentItem.id}-observation`] && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro</AlertTitle>
+                    <AlertDescription>{errors[`${currentItem.id}-observation`]}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
 
             {/* Render media attachments */}
             {renderMediaAttachments()}
