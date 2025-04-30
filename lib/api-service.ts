@@ -574,7 +574,7 @@ export class ApiService {
       // Obter o ID do usuário logado
       const userData = localStorage.getItem("user_data")
       const user = userData ? JSON.parse(userData) : null
-      const userId = user?.userId || 1013
+      const userId = user?.userId || user?.id || 1013 // Garantir que sempre temos um userId
 
       // Usar a data de submissão do checklist ou a data atual
       const submissionDate = checklist.submittedAt || new Date().toISOString()
@@ -612,94 +612,16 @@ export class ApiService {
         `Preparando checklist para envio: name=${checklistName}, modelId=${modelId}, flowSize=${flowSize}, flowStep=${flowStep}, km=${vehicleKm}`,
       )
 
+      // Processar os itens do checklist
+      let formattedItems
       try {
         // Processar os itens do checklist com mídia de forma assíncrona
-        const formattedItems = await this.formatChecklistItemsForApi(checklist)
-
-        // Preparar o array de locations
-        let locations = []
-        if (checklist.responses?.location) {
-          locations = [
-            {
-              flowStep: flowStep,
-              latitude: checklist.responses.location.latitude || 0,
-              longitude: checklist.responses.location.longitude || 0,
-              accuracy: checklist.responses.location.accuracy || 0,
-              address: checklist.responses.location.address || "Unknown",
-            },
-          ]
-        } else {
-          // Se não houver dados de localização, incluir uma localização padrão
-          locations = [
-            {
-              flowStep: flowStep,
-              latitude: 0,
-              longitude: 0,
-              accuracy: 0,
-              address: "Unknown",
-            },
-          ]
-        }
-
-        // Construir o objeto de checklist no formato da API
-        const checklistData = {
-          name: checklistName, // Usar o nome validado
-          modelId: modelId, // Usar o modelId validado
-          StartDate: submissionDate,
-          createdAt: checklist.createdAt || checklist.submittedAt || submissionDate, // Usar a data de criação efetiva ou a data de submissão como fallback
-          vehicleData: [
-            {
-              vehicleId: Number(checklist.vehicle?.id || "0"),
-              flowStep: flowStep,
-              vehicleKm: vehicleKm, // Usar a quilometragem informada
-            },
-          ],
-          flowSize: flowSize, // Usar o flowSize do template
-          checklistType: "mobile", // Ajuste conforme necessário
-          userId: userId, // Usar o ID do usuário logado
-          infoId: 1, // Ajuste conforme necessário
-          flowData: [
-            {
-              flowStep: flowStep,
-              data: formattedItems,
-            },
-          ],
-          locations: locations, // Incluir o array de locations
-        }
-
-        // Adicionar após a construção do objeto checklistData:
-        console.log("Enviando checklist para API (detalhado):", {
-          endpoint: API_ENDPOINTS.checklists(clientId),
-          method: "POST",
-          dataSize: JSON.stringify(checklistData).length,
-          name: checklistData.name,
-          modelId: checklistData.modelId,
-          vehicleId: checklistData.vehicleData[0].vehicleId,
-          vehicleKm: checklistData.vehicleData[0].vehicleKm,
-          itemsCount: checklistData.flowData[0].data.length,
-          userId: checklistData.userId,
-          locations: checklistData.locations,
-        })
-
-        console.log("Enviando checklist para API:", JSON.stringify(checklistData, null, 2))
-
-        // Usar o endpoint configurado
-        const response = await this.fetchWithAuth(API_ENDPOINTS.checklists(clientId), {
-          method: "POST",
-          body: JSON.stringify(checklistData),
-        })
-
-        const data = await this.handleApiResponse(response, "Falha ao enviar checklist")
-
-        return data
+        formattedItems = await this.formatChecklistItemsForApi(checklist)
       } catch (processingError) {
         console.error("Erro ao processar mídia do checklist:", processingError)
 
-        // Tentar enviar sem mídia se houver erro no processamento
-        console.log("Tentando enviar checklist sem mídia...")
-
         // Criar versão simplificada dos itens sem mídia
-        const simplifiedItems =
+        formattedItems =
           checklist.template?.items.map((item: any, index: number) => {
             const responses = checklist.responses || {}
             const response = responses[item.id]
@@ -718,73 +640,70 @@ export class ApiService {
               audios: [],
             }
           }) || []
-
-        // Obter a quilometragem do veículo (se disponível)
-        const vehicleKm = checklist.responses?.vehicleKilometer
-          ? Number.parseInt(checklist.responses.vehicleKilometer.replace(/\D/g, ""), 10)
-          : 0
-
-        // Preparar o array de locations
-        let locations = []
-        if (checklist.responses?.location) {
-          locations = [
-            {
-              flowStep: flowStep,
-              latitude: checklist.responses.location.latitude || 0,
-              longitude: checklist.responses.location.longitude || 0,
-              accuracy: checklist.responses.location.accuracy || 0,
-              address: checklist.responses.location.address || "Unknown",
-            },
-          ]
-        } else {
-          // Se não houver dados de localização, incluir uma localização padrão
-          locations = [
-            {
-              flowStep: flowStep,
-              latitude: 0,
-              longitude: 0,
-              accuracy: 0,
-              address: "Unknown",
-            },
-          ]
-        }
-
-        // Construir objeto de checklist simplificado
-        const simplifiedChecklistData = {
-          name: checklistName, // Usar o nome validado
-          modelId: modelId, // Usar o modelId validado
-          driverId: userId,
-          StartDate: submissionDate,
-          createdAt: checklist.createdAt || checklist.submittedAt || submissionDate, // Usar a data de criação efetiva ou a data de submissão como fallback
-          vehicleData: [
-            {
-              vehicleId: Number.parseInt(checklist.vehicle?.id || "0"),
-              flowStep: flowStep,
-              vehicleKm: vehicleKm, // Usar a quilometragem informada
-            },
-          ],
-          flowSize: flowSize,
-          checklistType: "mobile",
-          userId: userId,
-          infoId: 1,
-          flowData: [
-            {
-              flowStep: flowStep,
-              data: simplifiedItems,
-            },
-          ],
-          locations: locations, // Incluir o array de locations
-        }
-
-        console.log("Enviando checklist simplificado para API (sem mídia)")
-
-        const fallbackResponse = await this.fetchWithAuth(API_ENDPOINTS.checklists(clientId), {
-          method: "POST",
-          body: JSON.stringify(simplifiedChecklistData),
-        })
-
-        return this.handleApiResponse(fallbackResponse, "Falha ao enviar checklist simplificado")
       }
+
+      // Preparar o array de locations
+      let locations = []
+      if (checklist.responses?.location) {
+        locations = [
+          {
+            flowStep: flowStep,
+            latitude: checklist.responses.location.latitude || 0,
+            longitude: checklist.responses.location.longitude || 0,
+            accuracy: checklist.responses.location.accuracy || 0,
+            address: checklist.responses.location.address || "Unknown",
+          },
+        ]
+      } else {
+        // Se não houver dados de localização, incluir uma localização padrão
+        locations = [
+          {
+            flowStep: flowStep,
+            latitude: 0,
+            longitude: 0,
+            accuracy: 0,
+            address: "Unknown",
+          },
+        ]
+      }
+
+      // Construir o objeto de checklist no formato da API
+      const checklistData = {
+        name: checklistName,
+        modelId: modelId,
+        StartDate: submissionDate,
+        createdAt: checklist.createdAt || checklist.submittedAt || submissionDate,
+        vehicleData: [
+          {
+            vehicleId: Number(checklist.vehicle?.id || "0"),
+            flowStep: flowStep,
+            vehicleKm: vehicleKm,
+          },
+        ],
+        flowSize: flowSize,
+        checklistType: "mobile",
+        userId: userId,
+        driverId: userId, // Garantir que driverId está sempre presente
+        infoId: 1,
+        flowData: [
+          {
+            flowStep: flowStep,
+            data: formattedItems,
+          },
+        ],
+        locations: locations,
+      }
+
+      console.log("Enviando checklist para API:", JSON.stringify(checklistData, null, 2))
+
+      // Usar o endpoint configurado
+      const response = await this.fetchWithAuth(API_ENDPOINTS.checklists(clientId), {
+        method: "POST",
+        body: JSON.stringify(checklistData),
+      })
+
+      const data = await this.handleApiResponse(response, "Falha ao enviar checklist")
+      return data
     } catch (error: any) {
       console.error("Erro ao enviar checklist:", error)
       throw error

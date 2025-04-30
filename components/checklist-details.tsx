@@ -85,11 +85,16 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
               requiredAudio: item.requiredAudio || false,
               requiresObservation: item.requiredObservation || false,
               requiredObservation: item.requiredObservation || false,
+              answerTypeId: item.answerTypeId || 1,
             }))
           }
 
           // Adicionar as respostas adaptadas ao checklist
           checklist.responses = apiResponses
+
+          // Log para depuração
+          console.log("Respostas processadas da API:", apiResponses)
+          console.log("Template com items processados:", checklist.template)
         } catch (error) {
           console.error("Error processing API checklist responses:", error)
         }
@@ -292,7 +297,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
           </div>
         )}
 
-        {item.type === "condition" && response && (
+        {item.type === "condition" && (
           <div className="mt-1">
             Condição:{" "}
             <span
@@ -300,12 +305,20 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
                 response === "bom" ? "text-green-500" : response === "regular" ? "text-yellow-500" : "text-red-500"
               }`}
             >
-              {response === "bom" ? "Bom" : response === "regular" ? "Regular" : "Ruim"}
+              {response === "otimo"
+                ? "Ótimo"
+                : response === "bom"
+                  ? "Bom"
+                  : response === "regular"
+                    ? "Regular"
+                    : response === "ruim"
+                      ? "Ruim"
+                      : "Não respondido"}
             </span>
           </div>
         )}
 
-        {item.type === "fuel" && response && (
+        {item.type === "fuel" && (
           <div className="mt-1">
             Nível:{" "}
             <span
@@ -313,12 +326,22 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
                 response === "cheio" ? "text-green-500" : response === "meio" ? "text-yellow-500" : "text-red-500"
               }`}
             >
-              {response === "cheio" ? "Cheio" : response === "meio" ? "1/2" : "Vazio"}
+              {response === "cheio"
+                ? "Cheio"
+                : response === "3/4"
+                  ? "3/4"
+                  : response === "meio" || response === "1/2"
+                    ? "1/2"
+                    : response === "1/4"
+                      ? "1/4"
+                      : response === "vazio"
+                        ? "Vazio"
+                        : "Não respondido"}
             </span>
           </div>
         )}
 
-        {item.type === "satisfaction" && response && (
+        {item.type === "satisfaction" && (
           <div className="mt-1">
             Avaliação:{" "}
             <span
@@ -332,26 +355,34 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
                       : "text-red-500"
               }`}
             >
-              {response === "otimo" ? "Ótimo" : response === "bom" ? "Bom" : response === "neutro" ? "Neutro" : "Ruim"}
+              {response === "otimo"
+                ? "Ótimo"
+                : response === "bom"
+                  ? "Bom"
+                  : response === "neutro"
+                    ? "Neutro"
+                    : response === "ruim"
+                      ? "Ruim"
+                      : "Não respondido"}
             </span>
           </div>
         )}
 
-        {item.type === "rating" && response && (
+        {item.type === "rating" && (
           <div className="mt-1">
-            Avaliação: <span className="font-medium">{response}/5</span>
+            Avaliação: <span className="font-medium">{response || "Não respondido"}/5</span>
           </div>
         )}
 
-        {item.type === "number" && response && (
+        {item.type === "number" && (
           <div className="mt-1">
-            Valor: <span className="font-medium">{response}</span>
+            Valor: <span className="font-medium">{response || "Não respondido"}</span>
           </div>
         )}
 
-        {item.type === "select" && response && (
+        {item.type === "select" && (
           <div className="mt-1">
-            Selecionado: <span className="font-medium">{response}</span>
+            Selecionado: <span className="font-medium">{response || "Não respondido"}</span>
           </div>
         )}
 
@@ -361,7 +392,7 @@ export function ChecklistDetails({ checklist, onBack }: ChecklistDetailsProps) {
           </div>
         )}
 
-        {item.type === "text" && response && <div className="mt-1 text-sm">{response}</div>}
+        {item.type === "text" && <div className="mt-1 text-sm">{response || "Não respondido"}</div>}
 
         {observation && (
           <div className="mt-2">
@@ -631,6 +662,14 @@ function mapAnswerTypeToAppType(answerTypeId: number): string {
       return "text"
     case 5:
       return "select"
+    case 6:
+      return "multiselect"
+    case 7:
+      return "number"
+    case 8:
+      return "rating"
+    case 9:
+      return "satisfaction"
     default:
       return "text"
   }
